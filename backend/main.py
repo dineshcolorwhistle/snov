@@ -1,6 +1,10 @@
 import os
 import logging
-from fastapi import FastAPI, HTTPException, status
+import csv
+import io
+import re
+import concurrent.futures
+from fastapi import FastAPI, HTTPException, status, File, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator
 from dotenv import load_dotenv
@@ -208,3 +212,211 @@ async def add_prospect(request: ProspectRequest):
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Snov.io Prospect Management error: {str(e)}"
         )
+
+def make_dummy_email(first_name: str, last_name: str, company: str) -> str:
+    # Clean names and company to contain only alphanumeric characters
+    fn = re.sub(r'[^a-zA-Z0-9]', '', first_name).lower() if first_name else "prospect"
+    ln = re.sub(r'[^a-zA-Z0-9]', '', last_name).lower() if last_name else "prospect"
+    comp = re.sub(r'[^a-zA-Z0-9.]', '', company).lower() if company else "unknown"
+    comp = comp.replace('..', '.').strip('.')
+    if not fn: fn = "prospect"
+    if not ln: ln = "prospect"
+    if not comp: comp = "unknown"
+    return f"{fn}.{ln}@{comp}.no-email-found-cw1.com"
+
+@app.post("/api/prospects/bulk")
+async def bulk_add_prospects(list_id: str = Form(...), file: UploadFile = File(...)):
+    """
+    Accepts a CSV file of prospects, parses and validates headers,
+    and concurrently resolves emails and adds them to Snov.io.
+    """
+    # 1. Read file content
+    contents = await file.read()
+    
+    # 2. Check if file is CSV
+    if not file.filename.endswith('.csv'):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only CSV files are supported.")
+        
+    # 3. Parse CSV
+    try:
+        decoded = contents.decode('utf-8-sig') # handle UTF-8 with BOM if present
+        csv_file = io.StringIO(decoded)
+        reader = csv.DictReader(csv_file)
+        
+        if not reader.fieldnames:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="CSV file is empty.")
+            
+        headers = [h.strip() for h in reader.fieldnames]
+        expected_headers = ["First Name", "Last Name", "Company Domain/Name"]
+        
+        # Enforce that only these exact headers exist in the CSV
+        if set(headers) != set(expected_headers) or len(headers) != 3:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="The CSV file must contain only these three headers: 'First Name', 'Last Name', and 'Company Domain/Name'."
+            )
+            
+        rows = list(reader)
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logger.error(f"Failed to parse CSV: {e}")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to parse CSV file: {str(e)}")
+        
+    if not rows:
+        return {
+            "total": 0,
+            "successCount": 0,
+            "failedCount": 0,
+            "failedRecords": []
+        }
+        
+    snov_client = get_client()
+    fallback_list_id = os.getenv("EMAIL_NOT_FOUND_LIST_ID", "").strip()
+    
+    def process_row(row):
+        first_name = row.get("First Name", "").strip()
+        last_name = row.get("Last Name", "").strip()
+        domain_or_name = row.get("Company Domain/Name", "").strip()
+        
+        # Validation checks
+        if not first_name or not last_name or not domain_or_name:
+            reason = "Missing required fields"
+            add_failed_prospect_to_fallback(first_name, last_name, domain_or_name, reason)
+            return {
+                "success": False,
+                "first_name": first_name or "[Blank]",
+                "last_name": last_name or "[Blank]",
+                "company": domain_or_name or "[Blank]",
+                "reason": reason
+            }
+            
+        target_domain = domain_or_name
+        
+        # Check domain validity
+        if not snov_client.is_valid_domain(domain_or_name):
+            try:
+                resolved_domain = snov_client.find_domain_by_company_name(domain_or_name)
+                if resolved_domain:
+                    target_domain = resolved_domain
+                else:
+                    reason = "Could not resolve company domain"
+                    add_failed_prospect_to_fallback(first_name, last_name, domain_or_name, reason)
+                    return {
+                        "success": False,
+                        "first_name": first_name,
+                        "last_name": last_name,
+                        "company": domain_or_name,
+                        "reason": reason
+                    }
+            except Exception as e:
+                reason = f"Company domain resolution error: {str(e)}"
+                add_failed_prospect_to_fallback(first_name, last_name, domain_or_name, reason)
+                return {
+                    "success": False,
+                    "first_name": first_name,
+                    "last_name": last_name,
+                    "company": domain_or_name,
+                    "reason": reason
+                }
+                
+        # Find email using domain
+        email = None
+        try:
+            email = snov_client.find_email_by_name_and_domain(first_name, last_name, target_domain)
+        except Exception as e:
+            reason = f"Email Finder failed: {str(e)}"
+            add_failed_prospect_to_fallback(first_name, last_name, target_domain, reason)
+            return {
+                "success": False,
+                "first_name": first_name,
+                "last_name": last_name,
+                "company": domain_or_name,
+                "reason": reason
+            }
+            
+        if not email:
+            reason = "No business email address found"
+            add_failed_prospect_to_fallback(first_name, last_name, target_domain, reason)
+            return {
+                "success": False,
+                "first_name": first_name,
+                "last_name": last_name,
+                "company": domain_or_name,
+                "reason": reason
+            }
+            
+        # Add to prospect list
+        try:
+            added = snov_client.add_prospect_to_list(list_id, email, first_name, last_name)
+            if added:
+                return {"success": True}
+            else:
+                reason = "Failed to add prospect to list"
+                add_failed_prospect_to_fallback(first_name, last_name, target_domain, reason)
+                return {
+                    "success": False,
+                    "first_name": first_name,
+                    "last_name": last_name,
+                    "company": domain_or_name,
+                    "reason": reason
+                }
+        except Exception as e:
+            reason = f"Snov.io API error adding prospect: {str(e)}"
+            add_failed_prospect_to_fallback(first_name, last_name, target_domain, reason)
+            return {
+                "success": False,
+                "first_name": first_name,
+                "last_name": last_name,
+                "company": domain_or_name,
+                "reason": reason
+            }
+
+    def add_failed_prospect_to_fallback(first_name: str, last_name: str, company_or_domain: str, reason: str):
+        if not fallback_list_id:
+            logger.warning("EMAIL_NOT_FOUND_LIST_ID is not configured in env. Skipping fallback list routing.")
+            return
+            
+        dummy_email = make_dummy_email(first_name, last_name, company_or_domain)
+        try:
+            logger.info(f"Adding failed prospect to fallback list: {first_name} {last_name} ({dummy_email})")
+            snov_client.add_prospect_to_list(
+                list_id=fallback_list_id,
+                email=dummy_email,
+                first_name=first_name or "Unknown",
+                last_name=last_name or "Prospect"
+            )
+        except Exception as e:
+            logger.error(f"Failed to add prospect to fallback list: {e}")
+
+    # Run processing concurrently with ThreadPoolExecutor (max 5 parallel threads)
+    max_workers = min(5, len(rows))
+    results = []
+    
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_row = {executor.submit(process_row, row): row for row in rows}
+        for future in concurrent.futures.as_completed(future_to_row):
+            try:
+                res = future.result()
+                results.append(res)
+            except Exception as e:
+                row = future_to_row[future]
+                logger.error(f"Worker thread exception for row {row}: {e}")
+                results.append({
+                    "success": False,
+                    "first_name": row.get("First Name", ""),
+                    "last_name": row.get("Last Name", ""),
+                    "company": row.get("Company Domain/Name", ""),
+                    "reason": f"System error during processing: {str(e)}"
+                })
+
+    success_count = sum(1 for r in results if r["success"])
+    failed_records = [r for r in results if not r["success"]]
+    failed_count = len(failed_records)
+    
+    return {
+        "total": len(rows),
+        "successCount": success_count,
+        "failedCount": failed_count,
+        "failedRecords": failed_records
+    }
