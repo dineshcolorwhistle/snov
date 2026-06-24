@@ -1031,4 +1031,219 @@ h1 {
   font-weight: 500;
 }
 
+/* List Actions Container */
+.list-actions {
+  margin-top: auto;
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+
+.list-actions .btn {
+  flex: 1;
+  font-size: 13px;
+  padding: 8px 12px;
+}
+
+.list-actions .btn-view-prospects {
+  flex: 0 0 auto;
+  min-width: 80px;
+}
+
+/* View Prospects Modal Custom Layout */
+.view-prospects-modal {
+  display: flex;
+  flex-direction: column;
+  max-height: 85vh;
+}
+
+.view-modal-header {
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border-glass);
+}
+
+.view-modal-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-top: 6px;
+}
+
+.meta-stat {
+  color: var(--text-primary);
+}
+
+.meta-stat strong {
+  color: var(--primary);
+  font-weight: 700;
+}
+
+.meta-divider {
+  color: var(--text-muted);
+}
+
+.meta-date {
+  color: var(--text-secondary);
+}
+
+.view-modal-body {
+  flex-grow: 1;
+  overflow-y: auto;
+  margin-bottom: 20px;
+  min-height: 250px;
+  max-height: 45vh;
+  position: relative;
+}
+
+/* Prospects Table styling */
+.prospects-table-container {
+  width: 100%;
+  border: 1px solid var(--border-glass);
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(18, 20, 29, 0.3);
+}
+
+.prospects-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 14px;
+}
+
+.prospects-table th,
+.prospects-table td {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border-glass);
+}
+
+.prospects-table th {
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--text-secondary);
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+}
+
+.prospects-table tbody tr {
+  transition: var(--transition-smooth);
+}
+
+.prospects-table tbody tr:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.prospects-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.prospect-name-cell {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.prospect-email-cell {
+  color: var(--primary);
+  font-family: monospace;
+}
+
+.prospect-no-email-cell {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.empty-table-cell {
+  text-align: center;
+  padding: 48px 18px !important;
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+/* Modal Footer & Pagination */
+.view-modal-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-glass);
+  margin-top: auto;
+}
+
+.limit-selector-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.limit-select {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-glass);
+  border-radius: 6px;
+  padding: 4px 8px;
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  cursor: pointer;
+  outline: none;
+  transition: var(--transition-smooth);
+}
+
+.limit-select:focus {
+  border-color: var(--primary);
+}
+
+.limit-select option {
+  background: #11131c;
+  color: var(--text-primary);
+}
+
+.pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.pagination-btn {
+  padding: 6px 12px !important;
+  font-size: 12px !important;
+}
+
+.pagination-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+.pagination-info {
+  font-size: 13px;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+/* Table Skeleton Animation */
+.skeleton-row td {
+  padding: 16px 18px;
+}
+
+.skeleton-cell {
+  height: 16px;
+  background: linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.03) 75%);
+  background-size: 200% 100%;
+  animation: skeletonTablePulse 1.5s infinite linear;
+  border-radius: 4px;
+}
+
+@keyframes skeletonTablePulse {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+
 

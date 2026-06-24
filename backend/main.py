@@ -102,6 +102,34 @@ async def get_lists():
             detail=str(e)
         )
 
+@app.get("/api/lists/{list_id}/prospects")
+async def get_list_prospects(list_id: str, page: int = 1, limit: int = 20):
+    """
+    Retrieves prospects in a specific list, with pagination support.
+    """
+    if page < 1:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Page number must be 1 or greater."
+        )
+    if limit < 1 or limit > 100:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Limit must be between 1 and 100."
+        )
+
+    snov_client = get_client()
+    try:
+        data = snov_client.get_prospects_by_list(list_id=list_id, page=page, per_page=limit)
+        return data
+    except Exception as e:
+        logger.error(f"Error fetching prospects for list {list_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(e)
+        )
+
+
 class CreateListRequest(BaseModel):
     name: str = Field(..., description="Name of the new prospect list")
 

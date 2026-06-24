@@ -396,3 +396,40 @@ class SnovioClient:
         except Exception as e:
             logger.error(f"Error creating prospect list: {e}")
             raise Exception(f"Failed to create prospect list in Snov.io: {e}")
+
+    def get_prospects_by_list(self, list_id: str, page: int = 1, per_page: int = 20) -> Dict[str, Any]:
+        """
+        Fetches prospects in a specific list.
+        Uses POST /v1/prospect-list with JSON payload.
+        """
+        url = f"{self.base_url}/v1/prospect-list"
+        
+        payload = {
+            "listId": list_id,
+            "page": page,
+            "perPage": per_page
+        }
+        
+        logger.info(f"Fetching prospects for list {list_id} (page {page}, perPage {per_page})...")
+        
+        max_retries = 4
+        backoff = 3.0
+        
+        for attempt in range(max_retries):
+            headers = self.get_headers()
+            try:
+                response = requests.post(url, json=payload, headers=headers, timeout=15)
+                if response.status_code == 429:
+                    logger.warning(f"Snov.io rate limit (429) hit during list prospects retrieval. Retrying in {backoff} seconds...")
+                    time.sleep(backoff)
+                    backoff *= 2.0
+                    continue
+                response.raise_for_status()
+                return response.json()
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    logger.error(f"Error fetching prospects from list: {e}")
+                    raise Exception(f"Failed to fetch prospects from Snov.io list: {e}") from e
+                time.sleep(backoff)
+                backoff *= 2.0
+

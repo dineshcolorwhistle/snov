@@ -10,7 +10,7 @@ const SkeletonCard = () => (
   </div>
 );
 
-export default function ProspectLists({ lists, isLoading, onAddProspectClick, onCreateListClick }) {
+export default function ProspectLists({ lists, isLoading, onAddProspectClick, onViewProspectsClick, onCreateListClick }) {
   if (isLoading) {
     return (
       <div className="lists-grid">
@@ -64,25 +64,48 @@ export default function ProspectLists({ lists, isLoading, onAddProspectClick, on
               <span>prospect{list.contacts !== 1 ? 's' : ''}</span>
             </div>
           </div>
-          <button 
-            className="btn btn-primary btn-add-prospect"
-            onClick={() => onAddProspectClick(list)}
-          >
-            <svg 
-              width="16" 
-              height="16" 
-              viewBox="0 0 24 24" 
-              fill="none" 
-              stroke="currentColor" 
-              strokeWidth="2.5" 
-              strokeLinecap="round" 
-              strokeLinejoin="round"
+          <div className="list-actions">
+            <button 
+              className="btn btn-secondary btn-view-prospects"
+              onClick={() => onViewProspectsClick(list)}
+              id={`btn-view-${list.id}`}
             >
-              <line x1="12" y1="5" x2="12" y2="19"></line>
-              <line x1="5" y1="12" x2="19" y2="12"></line>
-            </svg>
-            Add Prospect
-          </button>
+              <svg 
+                width="14" 
+                height="14" 
+                viewBox="0 0 24 24" 
+                fill="none" 
+                stroke="currentColor" 
+                strokeWidth="2.5" 
+                strokeLinecap="round" 
+                strokeLinejoin="round"
+              >
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+              View
+            </button>
+            <button 
+              className="btn btn-primary btn-add-prospect"
+              onClick={() => onAddProspectClick(list)}
+              id={`btn-add-${list.id}`}
+            >
+              <svg 
+                width="14" 
+                height="14" 
+                viewBox="0 0 24 24" 
+                fill="none" 
+                stroke="currentColor" 
+                strokeWidth="2.5" 
+                strokeLinecap="round" 
+                strokeLinejoin="round"
+              >
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg>
+              Add Prospect
+            </button>
+          </div>
         </div>
       ))}
     </div>

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import ProspectLists from './components/ProspectLists';
 import AddProspectModal from './components/AddProspectModal';
 import CreateListModal from './components/CreateListModal';
+import ViewProspectsModal from './components/ViewProspectsModal';
 
 function App() {
   const [lists, setLists] = useState([]);
@@ -9,6 +10,8 @@ function App() {
   const [selectedList, setSelectedList] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [viewingList, setViewingList] = useState(null);
+  const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [toasts, setToasts] = useState([]);
 
   const addToast = (type, title, message) => {
@@ -63,6 +66,16 @@ function App() {
   const handleModalClose = () => {
     setIsModalOpen(false);
     setSelectedList(null);
+  };
+
+  const handleViewProspectsClick = (list) => {
+    setViewingList(list);
+    setIsViewModalOpen(true);
+  };
+
+  const handleViewModalClose = () => {
+    setIsViewModalOpen(false);
+    setViewingList(null);
   };
 
   const handleProspectAdded = () => {
@@ -133,6 +146,7 @@ function App() {
           lists={lists} 
           isLoading={isLoading} 
           onAddProspectClick={handleAddProspectClick} 
+          onViewProspectsClick={handleViewProspectsClick}
           onCreateListClick={() => setIsCreateModalOpen(true)}
         />
       </main>
@@ -149,6 +163,12 @@ function App() {
         onClose={() => setIsCreateModalOpen(false)}
         onSuccess={handleCreateListSuccess}
         lists={lists}
+      />
+
+      <ViewProspectsModal
+        list={viewingList}
+        isOpen={isViewModalOpen}
+        onClose={handleViewModalClose}
       />
 
       {/* Toast Alert notifications stack */}
