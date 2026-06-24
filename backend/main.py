@@ -269,15 +269,39 @@ async def bulk_add_prospects(list_id: str = Form(...), file: UploadFile = File(.
         if not reader.fieldnames:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="CSV file is empty.")
             
-        headers = [h.strip() for h in reader.fieldnames]
+        # Clean and normalize field names
+        normalized_headers = []
+        for h in reader.fieldnames:
+            h_clean = h.strip().lower()
+            if h_clean == "first name":
+                normalized_headers.append("First Name")
+            elif h_clean in ["last name", "last-name"]:
+                normalized_headers.append("Last Name")
+            elif h_clean in [
+                "company domain/name",
+                "company name / domain",
+                "company name/domain",
+                "company domain or name",
+                "company name or domain",
+                "company name",
+                "company domain",
+                "domain"
+            ]:
+                normalized_headers.append("Company Domain/Name")
+            else:
+                normalized_headers.append(h.strip())
+                
+        # Enforce that only these three normalized headers exist
         expected_headers = ["First Name", "Last Name", "Company Domain/Name"]
-        
-        # Enforce that only these exact headers exist in the CSV
-        if set(headers) != set(expected_headers) or len(headers) != 3:
+        if set(normalized_headers) != set(expected_headers) or len(normalized_headers) != 3:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="The CSV file must contain only these three headers: 'First Name', 'Last Name', and 'Company Domain/Name'."
             )
+            
+        # Re-assign normalized headers so row.get() matches the expected keys
+        reader.fieldnames = normalized_headers
+
             
         rows = list(reader)
     except HTTPException as e:

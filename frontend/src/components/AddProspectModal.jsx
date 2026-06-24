@@ -247,10 +247,31 @@ export default function AddProspectModal({ list, isOpen, onClose, onSuccess }) {
       }
       
       const headers = parsed[0].map(h => h.trim());
+      
+      // Normalize headers to support synonyms case-insensitively
+      const normalizedHeaders = headers.map(h => {
+        const lower = h.toLowerCase();
+        if (lower === 'first name') return 'First Name';
+        if (lower === 'last name' || lower === 'last-name') return 'Last Name';
+        if (
+          lower === 'company domain/name' || 
+          lower === 'company name / domain' || 
+          lower === 'company name/domain' || 
+          lower === 'company domain or name' ||
+          lower === 'company name or domain' ||
+          lower === 'company name' ||
+          lower === 'company domain' ||
+          lower === 'domain'
+        ) {
+          return 'Company Domain/Name';
+        }
+        return h;
+      });
+
       const expectedHeaders = ["First Name", "Last Name", "Company Domain/Name"];
       
       // Enforce headers
-      const hasAll = expectedHeaders.every(eh => headers.includes(eh)) && headers.length === 3;
+      const hasAll = expectedHeaders.every(eh => normalizedHeaders.includes(eh)) && normalizedHeaders.length === 3;
       if (!hasAll) {
         setErrors({ file: "The CSV file must contain only these three headers: 'First Name', 'Last Name', and 'Company Domain/Name'." });
         return;
@@ -263,7 +284,7 @@ export default function AddProspectModal({ list, isOpen, onClose, onSuccess }) {
         if (rowData.length < 3) continue;
         
         const rowObj = {};
-        headers.forEach((header, index) => {
+        normalizedHeaders.forEach((header, index) => {
           rowObj[header] = rowData[index] || "";
         });
         
