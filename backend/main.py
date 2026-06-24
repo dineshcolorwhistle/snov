@@ -162,9 +162,25 @@ async def add_prospect(request: ProspectRequest):
     """
     Attempts to find a business email for the prospect, and adds the
     prospect to the specified Snov.io list if found.
+    If lookup or insertion fails, the prospect is routed to the fallback list.
     """
     snov_client = get_client()
-    
+    fallback_list_id = os.getenv("EMAIL_NOT_FOUND_LIST_ID", "").strip()
+
+    def add_to_fallback(reason: str):
+        if fallback_list_id:
+            dummy_email = make_dummy_email(request.first_name, request.last_name, request.domain)
+            try:
+                logger.info(f"Adding failed single prospect to fallback list: {request.first_name} {request.last_name} ({dummy_email})")
+                snov_client.add_prospect_to_list(
+                    list_id=fallback_list_id,
+                    email=dummy_email,
+                    first_name=request.first_name,
+                    last_name=request.last_name
+                )
+            except Exception as e:
+                logger.error(f"Failed to add failed single prospect to fallback list: {e}")
+
     # 1. Look up email using Snov.io Email Finder API
     try:
         resolved_email = snov_client.find_email_by_name_and_domain(
@@ -174,6 +190,7 @@ async def add_prospect(request: ProspectRequest):
         )
     except Exception as e:
         logger.error(f"Email Finder failed: {e}")
+        add_to_fallback(f"Email Finder failed: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Snov.io Email Finder failed: {str(e)}"
@@ -182,6 +199,7 @@ async def add_prospect(request: ProspectRequest):
     # 2. Handle scenario where no email is found
     if not resolved_email:
         logger.info(f"No email address resolved for {request.first_name} {request.last_name} at {request.domain}.")
+        add_to_fallback("No business email address found")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="No business email address found for this prospect. Prospect was not created."
@@ -196,6 +214,7 @@ async def add_prospect(request: ProspectRequest):
             last_name=request.last_name
         )
         if not success:
+            add_to_fallback("Failed to add prospect to main list")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to add the prospect to the Snov.io list."
@@ -208,10 +227,14 @@ async def add_prospect(request: ProspectRequest):
         }
     except Exception as e:
         logger.error(f"Failed to add prospect to list: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Snov.io Prospect Management error: {str(e)}"
-        )
+        if not isinstance(e, HTTPException):
+            add_to_fallback(f"Snov.io API error adding prospect: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Snov.io Prospect Management error: {str(e)}"
+            )
+        raise e
+
 
 def make_dummy_email(first_name: str, last_name: str, company: str) -> str:
     # Clean names and company to contain only alphanumeric characters

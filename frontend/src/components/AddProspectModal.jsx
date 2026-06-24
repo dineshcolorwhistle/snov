@@ -1,5 +1,48 @@
 import React, { useState, useEffect } from 'react';
 
+function parseCSV(text) {
+  const lines = [];
+  let row = [""];
+  let inQuotes = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    const nextChar = text[i + 1];
+
+    if (char === '"') {
+      if (inQuotes && nextChar === '"') {
+        row[row.length - 1] += '"';
+        i++; // skip next quote
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (char === ',' && !inQuotes) {
+      row.push("");
+    } else if ((char === '\r' || char === '\n') && !inQuotes) {
+      if (char === '\r' && nextChar === '\n') {
+        i++;
+      }
+      lines.push(row);
+      row = [""];
+    } else {
+      row[row.length - 1] += char;
+    }
+  }
+  if (row.length > 1 || row[0] !== "") {
+    lines.push(row);
+  }
+  return lines;
+}
+
+const makeCSVBlob = (batchRows) => {
+  const headerLine = '"First Name","Last Name","Company Domain/Name"';
+  const rowLines = batchRows.map(row => 
+    `"${row["First Name"].replace(/"/g, '""')}","${row["Last Name"].replace(/"/g, '""')}","${row["Company Domain/Name"].replace(/"/g, '""')}"`
+  );
+  const csvText = [headerLine, ...rowLines].join('\n');
+  return new Blob([csvText], { type: 'text/csv' });
+};
+
 export default function AddProspectModal({ list, isOpen, onClose, onSuccess }) {
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -13,6 +56,11 @@ export default function AddProspectModal({ list, isOpen, onClose, onSuccess }) {
   const [file, setFile] = useState(null);
   const [dragActive, setDragActive] = useState(false);
   const [bulkResults, setBulkResults] = useState(null);
+
+  // Batching & progress tracking states
+  const [progress, setProgress] = useState(0);
+  const [totalProspects, setTotalProspects] = useState(0);
+  const [processedProspects, setProcessedProspects] = useState(0);
 
   // Status: 'idle' | 'loading' | 'success' | 'bulk-success' | 'error'
   const [status, setStatus] = useState('idle');
@@ -35,6 +83,9 @@ export default function AddProspectModal({ list, isOpen, onClose, onSuccess }) {
       setFile(null);
       setDragActive(false);
       setBulkResults(null);
+      setProgress(0);
+      setTotalProspects(0);
+      setProcessedProspects(0);
     }
   }, [isOpen]);
 
@@ -177,34 +228,129 @@ export default function AddProspectModal({ list, isOpen, onClose, onSuccess }) {
       return;
     }
     
-    setStatus('loading');
-    
-    const formData = new FormData();
-    formData.append('list_id', list.id);
-    formData.append('file', file);
-    
-    try {
-      const response = await fetch('/api/prospects/bulk', {
-        method: 'POST',
-        body: formData,
-      });
-      const data = await response.json();
+    const reader = new FileReader();
+    reader.onerror = () => {
+      setErrors({ file: 'Failed to read CSV file.' });
+    };
+    reader.onload = async (event) => {
+      const text = event.target.result;
       
-      if (response.ok) {
-        setBulkResults(data);
+      let parsed;
+      try {
+        parsed = parseCSV(text);
+        if (parsed.length === 0 || (parsed.length === 1 && parsed[0].length === 1 && parsed[0][0] === "")) {
+          throw new Error("CSV file is empty.");
+        }
+      } catch (err) {
+        setErrors({ file: err.message || 'Failed to parse CSV file.' });
+        return;
+      }
+      
+      const headers = parsed[0].map(h => h.trim());
+      const expectedHeaders = ["First Name", "Last Name", "Company Domain/Name"];
+      
+      // Enforce headers
+      const hasAll = expectedHeaders.every(eh => headers.includes(eh)) && headers.length === 3;
+      if (!hasAll) {
+        setErrors({ file: "The CSV file must contain only these three headers: 'First Name', 'Last Name', and 'Company Domain/Name'." });
+        return;
+      }
+      
+      // Extract rows
+      const rows = [];
+      for (let i = 1; i < parsed.length; i++) {
+        const rowData = parsed[i];
+        if (rowData.length < 3) continue;
+        
+        const rowObj = {};
+        headers.forEach((header, index) => {
+          rowObj[header] = rowData[index] || "";
+        });
+        
+        // Skip if completely blank row
+        if (!rowObj["First Name"].trim() && !rowObj["Last Name"].trim() && !rowObj["Company Domain/Name"].trim()) {
+          continue;
+        }
+        
+        rows.push(rowObj);
+      }
+      
+      if (rows.length === 0) {
+        setErrors({ file: "CSV file has no valid prospect records." });
+        return;
+      }
+      
+      // We have valid rows! Let's start progress tracking
+      setStatus('loading');
+      setTotalProspects(rows.length);
+      setProcessedProspects(0);
+      setProgress(0);
+      
+      // Chunk size of 5
+      const chunkSize = 5;
+      const chunks = [];
+      for (let i = 0; i < rows.length; i += chunkSize) {
+        chunks.push(rows.slice(i, i + chunkSize));
+      }
+      
+      const accumulatedResults = {
+        total: rows.length,
+        successCount: 0,
+        failedCount: 0,
+        failedRecords: []
+      };
+      
+      let currentProcessed = 0;
+      
+      try {
+        for (let batchIndex = 0; batchIndex < chunks.length; batchIndex++) {
+          const batch = chunks[batchIndex];
+          const csvBlob = makeCSVBlob(batch);
+          
+          const formData = new FormData();
+          formData.append('list_id', list.id);
+          formData.append('file', csvBlob, 'batch.csv');
+          
+          const response = await fetch('/api/prospects/bulk', {
+            method: 'POST',
+            body: formData,
+          });
+          const data = await response.json();
+          
+          if (!response.ok) {
+            const failReason = data.detail || 'Connection error processing batch.';
+            batch.forEach(row => {
+              accumulatedResults.failedCount++;
+              accumulatedResults.failedRecords.push({
+                first_name: row["First Name"] || "[Blank]",
+                last_name: row["Last Name"] || "[Blank]",
+                company: row["Company Domain/Name"] || "[Blank]",
+                reason: failReason
+              });
+            });
+          } else {
+            accumulatedResults.successCount += data.successCount;
+            accumulatedResults.failedCount += data.failedCount;
+            accumulatedResults.failedRecords.push(...data.failedRecords);
+          }
+          
+          currentProcessed += batch.length;
+          setProcessedProspects(currentProcessed);
+          setProgress(Math.round((currentProcessed / rows.length) * 100));
+        }
+        
+        // Complete processing!
+        setBulkResults(accumulatedResults);
         setStatus('bulk-success');
         onSuccess();
-      } else {
+      } catch (err) {
+        console.error(err);
         setStatusTitle('Import Failed');
-        setStatusMessage(data.detail || 'An error occurred during bulk upload.');
+        setStatusMessage('Could not connect to the backend server. Make sure the backend server is running on port 8000.');
         setStatus('error');
       }
-    } catch (err) {
-      console.error(err);
-      setStatusTitle('Import Failed');
-      setStatusMessage('Could not connect to the backend server. Make sure the backend server is running on port 8000.');
-      setStatus('error');
-    }
+    };
+    reader.readAsText(file);
   };
 
   return (
@@ -377,6 +523,17 @@ export default function AddProspectModal({ list, isOpen, onClose, onSuccess }) {
                 : 'Looking up domain details and finding matching email addresses...'
               }
             </p>
+
+            {activeTab === 'csv' && (
+              <div className="progress-container">
+                <div className="progress-bar-bg">
+                  <div className="progress-bar-fill" style={{ width: `${progress}%` }} />
+                </div>
+                <div className="progress-text">
+                  Processing {processedProspects} of {totalProspects} prospects ({progress}%)...
+                </div>
+              </div>
+            )}
 
             {activeTab === 'single' && (
               <div className="stepper">
