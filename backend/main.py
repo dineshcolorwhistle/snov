@@ -77,9 +77,9 @@ class ProspectRequest(BaseModel):
         if domain.startswith("www."):
             domain = domain[4:]
             
-        # Basic domain format validation (contains a dot and valid chars)
-        if "." not in domain or len(domain) < 4:
-            raise ValueError("Invalid domain name format")
+        # Allow either a valid domain or a company name (at least 2 characters)
+        if len(domain) < 2:
+            raise ValueError("Company domain or name must be at least 2 characters")
         return domain
 
 @app.get("/api/lists")

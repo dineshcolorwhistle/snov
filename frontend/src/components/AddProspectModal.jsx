@@ -43,16 +43,10 @@ export default function AddProspectModal({ list, isOpen, onClose, onSuccess }) {
       newErrors.lastName = 'Last name cannot contain numbers';
     }
 
-    const domainRegex = /^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]\.[a-zA-Z]{2,10}$/;
-    let cleanedDomain = domain.trim().toLowerCase();
-    if (cleanedDomain.startsWith('http://')) cleanedDomain = cleanedDomain.slice(7);
-    if (cleanedDomain.startsWith('https://')) cleanedDomain = cleanedDomain.slice(8);
-    if (cleanedDomain.startsWith('www.')) cleanedDomain = cleanedDomain.slice(4);
-
     if (!domain.trim()) {
-      newErrors.domain = 'Company domain is required';
-    } else if (!domainRegex.test(cleanedDomain)) {
-      newErrors.domain = 'Please enter a valid domain format (e.g., example.com)';
+      newErrors.domain = 'Company domain or name is required';
+    } else if (domain.trim().length < 2) {
+      newErrors.domain = 'Company domain or name must be at least 2 characters';
     }
 
     setErrors(newErrors);
@@ -170,12 +164,12 @@ export default function AddProspectModal({ list, isOpen, onClose, onSuccess }) {
               </div>
 
               <div className="form-group">
-                <label className="form-label" htmlFor="company-domain">Company Domain</label>
+                <label className="form-label" htmlFor="company-domain">Company Domain or Name</label>
                 <input
                   id="company-domain"
                   type="text"
                   className="form-input"
-                  placeholder="e.g. stripe.com"
+                  placeholder="e.g. stripe.com or Stripe"
                   value={domain}
                   onChange={(e) => setDomain(e.target.value)}
                 />

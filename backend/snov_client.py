@@ -1,4 +1,5 @@
 import time
+import re
 import logging
 import requests
 from typing import Dict, Any, List, Optional
@@ -118,11 +119,101 @@ class SnovioClient:
 
         return standardized_lists
 
+    def is_valid_domain(self, domain: str) -> bool:
+        """
+        Validates if the input looks like a valid domain format.
+        """
+        val = domain.strip().lower()
+        if " " in val:
+            return False
+        if val.startswith("http://"):
+            val = val[7:]
+        elif val.startswith("https://"):
+            val = val[8:]
+        if val.startswith("www."):
+            val = val[4:]
+            
+        # Basic domain format validation (contains a dot and valid characters)
+        pattern = r"^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]?\.[a-zA-Z]{2,10}$"
+        return bool(re.match(pattern, val))
+
+    def find_domain_by_company_name(self, company_name: str) -> Optional[str]:
+        """
+        Searches Snov.io for a company's website domain by name.
+        """
+        start_url = f"{self.base_url}/v2/company-domain-by-name/start"
+        headers = self.get_headers().copy()
+        headers["Content-Type"] = "application/x-www-form-urlencoded"
+        
+        # Snov.io expects names[] array parameter in application/x-www-form-urlencoded
+        payload = [("names[]", company_name)]
+        
+        logger.info(f"Initiating domain search for company: '{company_name}'...")
+        try:
+            response = requests.post(start_url, data=payload, headers=headers, timeout=15)
+            response.raise_for_status()
+            start_data = response.json()
+        except Exception as e:
+            logger.error(f"Failed to start company domain search task: {e}")
+            raise Exception(f"Snov.io Company Domain API failed to start: {e}")
+
+        task_hash = start_data.get("task_hash")
+        if not task_hash and isinstance(start_data.get("data"), dict):
+            task_hash = start_data["data"].get("task_hash")
+            
+        if not task_hash:
+            logger.warning(f"No task_hash returned in domain search: {start_data}")
+            raise Exception("Snov.io did not return a task hash for the domain search.")
+
+        result_url = f"{self.base_url}/v2/company-domain-by-name/result"
+        max_attempts = 15
+        poll_interval = 2.0
+        
+        logger.info(f"Domain search task started. Hash: {task_hash}. Polling...")
+        for attempt in range(max_attempts):
+            time.sleep(poll_interval)
+            try:
+                res = requests.get(result_url, params={"task_hash": task_hash}, headers=headers, timeout=10)
+                res.raise_for_status()
+                result_data = res.json()
+            except Exception as e:
+                logger.error(f"Error polling domain search results (attempt {attempt+1}): {e}")
+                continue
+
+            logger.info(f"Domain search poll attempt {attempt+1} response: {result_data}")
+
+            status = result_data.get("status")
+            if status in ["in progress", "processing", "pending"]:
+                logger.info("Domain search task is still processing. Waiting...")
+                continue
+                
+            if status == "completed":
+                data = result_data.get("data") or []
+                if data:
+                    first_res = data[0]
+                    result_dict = first_res.get("result") or {}
+                    domain = result_dict.get("domain") or first_res.get("domain")
+                    if domain:
+                        logger.info(f"Successfully resolved company '{company_name}' to domain '{domain}'")
+                        return domain
+                logger.warning(f"Domain search completed but no domain found for company '{company_name}'")
+                return None
+
+        logger.warning("Polling timed out. No domain was resolved.")
+        return None
+
     def find_email_by_name_and_domain(self, first_name: str, last_name: str, domain: str) -> Optional[str]:
         """
         Starts an email search task and polls the Snov.io result endpoint.
         Returns the resolved business email or None if no valid email is found.
         """
+        # Resolve company name to domain if a domain wasn't provided directly
+        if not self.is_valid_domain(domain):
+            resolved_domain = self.find_domain_by_company_name(domain)
+            if not resolved_domain:
+                raise Exception(f"Could not resolve company name '{domain}' to an official domain.")
+            domain = resolved_domain
+
         start_url = f"{self.base_url}/v2/emails-by-domain-by-name/start"
         headers = self.get_headers()
         
@@ -146,6 +237,9 @@ class SnovioClient:
             raise Exception(f"Snov.io Email Finder API failed to start: {e}")
 
         task_hash = start_data.get("task_hash")
+        if not task_hash and isinstance(start_data.get("data"), dict):
+            task_hash = start_data["data"].get("task_hash")
+
         if not task_hash:
             logger.warning(f"No task_hash returned in Snov.io response: {start_data}")
             # Check if it directly returned the email (sometimes APIs return cached items immediately)
@@ -177,14 +271,15 @@ class SnovioClient:
 
             # Check if task is still processing
             # Snov.io result endpoint might return status: 'processing', or empty results, or list of results
+            status = "completed"
             if isinstance(result_data, dict):
-                status = result_data.get("status")
+                status = result_data.get("status") or "completed"
                 if status in ["processing", "pending"]:
                     logger.info("Search task is still processing. Waiting...")
                     continue
                 
                 # Check for results list
-                rows = result_data.get("results") or result_data.get("rows") or []
+                rows = result_data.get("results") or result_data.get("rows") or result_data.get("data") or []
             elif isinstance(result_data, list):
                 rows = result_data
             else:
@@ -195,19 +290,35 @@ class SnovioClient:
                 first_row = rows[0]
                 if isinstance(first_row, dict):
                     email = first_row.get("email")
-                    status = first_row.get("status")
+                    email_status = first_row.get("status")
+                    
+                    # Support v2 nested format
+                    if not email and isinstance(first_row.get("result"), list) and len(first_row["result"]) > 0:
+                        res_item = first_row["result"][0]
+                        if isinstance(res_item, dict):
+                            email = res_item.get("email")
+                            email_status = res_item.get("status")
+                    elif not email and isinstance(first_row.get("result"), dict):
+                        res_item = first_row["result"]
+                        email = res_item.get("email")
+                        email_status = res_item.get("status")
                     
                     if email:
                         # Check verification status
-                        if status == "not_valid":
+                        if email_status == "not_valid":
                             logger.info(f"Email {email} found but verification status is 'not_valid'.")
                             return None
                         
-                        logger.info(f"Found valid/unknown email: {email} (status: {status})")
+                        logger.info(f"Found valid/unknown email: {email} (status: {email_status})")
                         return email
                 
                 # If we got rows but no email, it means search is complete and nothing was found
-                logger.info("Search complete but no email address was found.")
+                if status == "completed":
+                    logger.info("Search complete but no email address was found.")
+                    return None
+            
+            if status == "completed":
+                logger.info("Search complete but no results were returned.")
                 return None
 
         logger.warning("Polling timed out. No email address was resolved.")
