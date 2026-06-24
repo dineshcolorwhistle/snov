@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import ProspectLists from './components/ProspectLists';
 import AddProspectModal from './components/AddProspectModal';
+import CreateListModal from './components/CreateListModal';
 
 function App() {
   const [lists, setLists] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedList, setSelectedList] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [toasts, setToasts] = useState([]);
 
   const addToast = (type, title, message) => {
@@ -68,6 +70,18 @@ function App() {
     fetchLists(true); // Silent reload to update list totals in the background
   };
 
+  const handleCreateListSuccess = (newList, successMsg) => {
+    addToast('success', 'List Created', successMsg || `List '${newList.name}' was successfully created.`);
+    
+    // Optimistically prepend to existing lists
+    setLists((prev) => [newList, ...prev]);
+    
+    // Close creation modal and immediately open add prospect modal for this new list
+    setIsCreateModalOpen(false);
+    setSelectedList(newList);
+    setIsModalOpen(true);
+  };
+
   return (
     <>
       <header className="app-header">
@@ -76,7 +90,15 @@ function App() {
           <span className="logo-text">Snov.io</span>
           <span className="logo-badge">Automation</span>
         </div>
-        <div>
+        <div style={{ display: 'flex', gap: '12px' }}>
+          <button 
+            className="btn btn-primary" 
+            onClick={() => setIsCreateModalOpen(true)}
+            style={{ padding: '8px 16px', fontSize: '13px' }}
+          >
+            <span style={{ fontSize: '16px', fontWeight: 'bold' }}>+</span>
+            Create List
+          </button>
           <button 
             className="btn btn-secondary" 
             onClick={() => fetchLists()} 
@@ -111,6 +133,7 @@ function App() {
           lists={lists} 
           isLoading={isLoading} 
           onAddProspectClick={handleAddProspectClick} 
+          onCreateListClick={() => setIsCreateModalOpen(true)}
         />
       </main>
 
@@ -119,6 +142,13 @@ function App() {
         isOpen={isModalOpen}
         onClose={handleModalClose}
         onSuccess={handleProspectAdded}
+      />
+
+      <CreateListModal
+        isOpen={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
+        onSuccess={handleCreateListSuccess}
+        lists={lists}
       />
 
       {/* Toast Alert notifications stack */}

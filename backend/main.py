@@ -98,6 +98,61 @@ async def get_lists():
             detail=str(e)
         )
 
+class CreateListRequest(BaseModel):
+    name: str = Field(..., description="Name of the new prospect list")
+
+    @field_validator("name")
+    @classmethod
+    def check_non_empty(cls, v: str) -> str:
+        stripped = v.strip()
+        if not stripped:
+            raise ValueError("List name cannot be empty or blank")
+        return stripped
+
+@app.post("/api/lists")
+async def create_list(request: CreateListRequest):
+    """
+    Creates a new prospect list in Snov.io after validating it doesn't already exist.
+    """
+    snov_client = get_client()
+    
+    # 1. Fetch existing lists to check for duplicates (case-insensitive)
+    try:
+        existing_lists = snov_client.get_user_lists()
+    except Exception as e:
+        logger.error(f"Failed to fetch existing lists for validation: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Failed to check existing lists: {str(e)}"
+        )
+        
+    name_lower = request.name.lower()
+    for lst in existing_lists:
+        if lst.get("name", "").lower() == name_lower:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"A prospect list named '{request.name}' already exists."
+            )
+            
+    # 2. Create the list on Snov.io
+    try:
+        new_list_id = snov_client.create_user_list(request.name)
+        return {
+            "success": True,
+            "list": {
+                "id": new_list_id,
+                "name": request.name,
+                "contacts": 0
+            },
+            "message": f"Successfully created prospect list '{request.name}'!"
+        }
+    except Exception as e:
+        logger.error(f"Failed to create prospect list: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Snov.io API error: {str(e)}"
+        )
+
 @app.post("/api/prospects")
 async def add_prospect(request: ProspectRequest):
     """

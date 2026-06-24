@@ -356,3 +356,31 @@ class SnovioClient:
         except Exception as e:
             logger.error(f"Error adding prospect to list: {e}")
             raise Exception(f"Failed to add prospect to Snov.io list: {e}")
+
+    def create_user_list(self, name: str) -> str:
+        """
+        Creates a new prospect list in Snov.io.
+        """
+        url = f"{self.base_url}/v1/lists"
+        headers = self.get_headers()
+        payload = {"name": name}
+        
+        logger.info(f"Creating prospect list with name '{name}'...")
+        try:
+            response = requests.post(url, json=payload, headers=headers, timeout=15)
+            response.raise_for_status()
+            data = response.json()
+            
+            success = data.get("success")
+            list_data = data.get("data") or {}
+            list_id = list_data.get("id")
+            
+            if success and list_id:
+                logger.info(f"Successfully created prospect list. ID: {list_id}")
+                return str(list_id)
+            else:
+                logger.error(f"Snov.io failed to create list. Response: {data}")
+                raise Exception(f"Snov.io API returned unexpected response: {data}")
+        except Exception as e:
+            logger.error(f"Error creating prospect list: {e}")
+            raise Exception(f"Failed to create prospect list in Snov.io: {e}")

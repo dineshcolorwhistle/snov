@@ -10,7 +10,7 @@ const SkeletonCard = () => (
   </div>
 );
 
-export default function ProspectLists({ lists, isLoading, onAddProspectClick }) {
+export default function ProspectLists({ lists, isLoading, onAddProspectClick, onCreateListClick }) {
   if (isLoading) {
     return (
       <div className="lists-grid">
@@ -37,15 +37,24 @@ export default function ProspectLists({ lists, isLoading, onAddProspectClick }) 
         <h3 style={{ color: 'var(--text-primary)', marginBottom: '8px', fontSize: '18px' }}>
           No prospect lists found
         </h3>
-        <p style={{ fontSize: '14px' }}>
+        <p style={{ fontSize: '14px', marginBottom: '20px' }}>
           Make sure your Snov.io account has active prospect lists and that your API Client ID and Secret are configured correctly in the backend `.env` file.
         </p>
+        <button className="btn btn-primary" onClick={onCreateListClick}>
+          <span style={{ fontSize: '18px', marginRight: '4px', lineHeight: 1 }}>+</span>
+          Create New List
+        </button>
       </div>
     );
   }
 
   return (
     <div className="lists-grid">
+      <div className="list-card create-list-card" onClick={onCreateListClick}>
+        <div className="create-list-icon">+</div>
+        <div className="create-list-title">Create New List</div>
+      </div>
+
       {lists.map((list) => (
         <div key={list.id} className="list-card">
           <div className="list-info">

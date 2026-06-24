@@ -160,6 +160,59 @@ h1 {
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5), rgba(102, 252, 241, 0.05) 0px 0px 20px;
 }
 
+/* Create List Card */
+.create-list-card {
+  border: 2px dashed rgba(255, 255, 255, 0.15);
+  justify-content: center;
+  align-items: center;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.01);
+  text-align: center;
+}
+
+.create-list-card:hover {
+  border-color: var(--primary);
+  background: rgba(102, 252, 241, 0.03);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5), rgba(102, 252, 241, 0.05) 0px 0px 20px;
+}
+
+.create-list-card::before {
+  display: none;
+}
+
+.create-list-icon {
+  font-size: 32px;
+  font-weight: 300;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+  transition: var(--transition-smooth);
+  width: 54px;
+  height: 54px;
+  border: 2px dashed rgba(255, 255, 255, 0.15);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.create-list-card:hover .create-list-icon {
+  color: var(--primary);
+  border-color: var(--primary);
+  transform: scale(1.1);
+  box-shadow: 0 0 15px rgba(102, 252, 241, 0.2);
+}
+
+.create-list-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  transition: var(--transition-smooth);
+}
+
+.create-list-card:hover .create-list-title {
+  color: var(--text-primary);
+}
+
 .list-card:hover::before {
   opacity: 1;
 }
