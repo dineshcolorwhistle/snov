@@ -166,8 +166,8 @@ class SnovioClient:
             raise Exception("Snov.io did not return a task hash for the domain search.")
 
         result_url = f"{self.base_url}/v2/company-domain-by-name/result"
-        max_attempts = 15
-        poll_interval = 2.0
+        max_attempts = 12
+        poll_interval = 4.0
         
         logger.info(f"Domain search task started. Hash: {task_hash}. Polling...")
         for attempt in range(max_attempts):
@@ -251,8 +251,8 @@ class SnovioClient:
 
         # Polling result
         result_url = f"{self.base_url}/v2/emails-by-domain-by-name/result"
-        max_attempts = 15
-        poll_interval = 2.0
+        max_attempts = 12
+        poll_interval = 4.0
         
         logger.info(f"Task started. Hash: {task_hash}. Polling for results...")
         
@@ -326,10 +326,9 @@ class SnovioClient:
 
     def add_prospect_to_list(self, list_id: str, email: str, first_name: str, last_name: str) -> bool:
         """
-        Adds a prospect to a Snov.io list.
+        Adds a prospect to a Snov.io list with rate-limit retry handling.
         """
         url = f"{self.base_url}/v1/add-prospect-to-list"
-        headers = self.get_headers()
         
         payload = {
             "listId": list_id,
@@ -340,22 +339,35 @@ class SnovioClient:
         }
         
         logger.info(f"Adding prospect {first_name} {last_name} ({email}) to list {list_id}...")
-        try:
-            response = requests.post(url, json=payload, headers=headers, timeout=15)
-            response.raise_for_status()
-            data = response.json()
-            
-            # API returns success status. It may return success = True or status = 'added' etc.
-            success = data.get("success") or data.get("status") == "added" or "id" in data
-            if success:
-                logger.info("Successfully added prospect to Snov.io list.")
-                return True
-            else:
-                logger.error(f"Snov.io failed to add prospect. Response: {data}")
-                return False
-        except Exception as e:
-            logger.error(f"Error adding prospect to list: {e}")
-            raise Exception(f"Failed to add prospect to Snov.io list: {e}")
+        
+        max_retries = 4
+        backoff = 3.0
+        
+        for attempt in range(max_retries):
+            headers = self.get_headers()
+            try:
+                response = requests.post(url, json=payload, headers=headers, timeout=15)
+                if response.status_code == 429:
+                    logger.warning(f"Snov.io rate limit (429) hit during list addition. Retrying in {backoff} seconds...")
+                    time.sleep(backoff)
+                    backoff *= 2.0
+                    continue
+                response.raise_for_status()
+                data = response.json()
+                
+                success = data.get("success") or data.get("status") == "added" or "id" in data
+                if success:
+                    logger.info("Successfully added prospect to Snov.io list.")
+                    return True
+                else:
+                    logger.error(f"Snov.io failed to add prospect. Response: {data}")
+                    return False
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    logger.error(f"Error adding prospect to list: {e}")
+                    raise Exception(f"Failed to add prospect to Snov.io list: {e}") from e
+                time.sleep(backoff)
+                backoff *= 2.0
 
     def create_user_list(self, name: str) -> str:
         """
