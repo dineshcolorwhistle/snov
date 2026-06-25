@@ -137,6 +137,81 @@ class SnovioClient:
         pattern = r"^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]?\.[a-zA-Z]{2,10}$"
         return bool(re.match(pattern, val))
 
+    def find_domain_via_custom_api(self, company_name: str) -> Optional[str]:
+        """
+        Calls the custom Domain Finder API to retrieve the company's domain.
+        """
+        import os
+        url = "https://domainfinder.agentwhistle.com/api/domain"
+        api_key = os.getenv("DOMAIN_FINDER_API_KEY", "33879b4f44c668474d12bfb93af204183c26813dcdde463a68ee024ace9f3859").strip()
+        serper_api_key = os.getenv("DOMAIN_FINDER_SERPER_API_KEY", "ce3db86bd10626443ff95fe94e400b8057b5fafc").strip()
+        
+        headers = {
+            "Content-Type": "application/json",
+            "X-API-Key": api_key
+        }
+        payload = {
+            "companyName": company_name,
+            "serperApiKey": serper_api_key
+        }
+        
+        logger.info(f"Calling custom Domain Finder API for company: '{company_name}'...")
+        try:
+            response = requests.post(url, json=payload, headers=headers, timeout=20)
+            response.raise_for_status()
+            data = response.json()
+            if data.get("success") and data.get("domain"):
+                domain = data["domain"].strip().lower()
+                logger.info(f"Custom Domain Finder API resolved '{company_name}' to domain '{domain}'")
+                return domain
+            else:
+                logger.warning(f"Custom Domain Finder API failed to find domain for '{company_name}': {data}")
+                return None
+        except Exception as e:
+            logger.error(f"Error calling custom Domain Finder API for '{company_name}': {e}")
+            return None
+
+    def find_linkedin_via_custom_api(self, first_name: str, last_name: str, company_name: str) -> Optional[str]:
+        """
+        Calls the custom LinkedIn Profile API to retrieve the prospect's LinkedIn URL.
+        """
+        import os
+        url = "https://linkedinurl.agentwhistle.com/api/profile"
+        api_key = os.getenv("LINKEDIN_API_KEY", "a30e41404071653c993cfcba98287f42a2c152a7f07f5d5d644e4b0ffeaa604c").strip()
+        serper_api_key = os.getenv("LINKEDIN_SERPER_API_KEY", "64d5bd586e19b19010f4ac64c257fe4510e6adde").strip()
+        try:
+            credits_balance = int(os.getenv("LINKEDIN_SERPER_CREDITS_BALANCE", "2497").strip())
+        except Exception:
+            credits_balance = 2497
+            
+        headers = {
+            "Content-Type": "application/json",
+            "X-API-Key": api_key
+        }
+        payload = {
+            "firstName": first_name,
+            "lastName": last_name,
+            "companyName": company_name,
+            "serperApiKey": serper_api_key,
+            "serperCreditsBalance": credits_balance
+        }
+        
+        logger.info(f"Calling custom LinkedIn API for '{first_name} {last_name}' at '{company_name}'...")
+        try:
+            response = requests.post(url, json=payload, headers=headers, timeout=20)
+            response.raise_for_status()
+            data = response.json()
+            if data.get("success") and data.get("linkedinUrl"):
+                linkedin_url = data["linkedinUrl"].strip()
+                logger.info(f"Custom LinkedIn API resolved profile: '{linkedin_url}'")
+                return linkedin_url
+            else:
+                logger.warning(f"Custom LinkedIn API failed to find profile: {data}")
+                return None
+        except Exception as e:
+            logger.error(f"Error calling custom LinkedIn API: {e}")
+            return None
+
     def find_domain_by_company_name(self, company_name: str) -> Optional[str]:
         """
         Searches Snov.io for a company's website domain by name.
@@ -207,12 +282,8 @@ class SnovioClient:
         Starts an email search task and polls the Snov.io result endpoint.
         Returns the resolved business email or None if no valid email is found.
         """
-        # Resolve company name to domain if a domain wasn't provided directly
         if not self.is_valid_domain(domain):
-            resolved_domain = self.find_domain_by_company_name(domain)
-            if not resolved_domain:
-                raise Exception(f"Could not resolve company name '{domain}' to an official domain.")
-            domain = resolved_domain
+            raise Exception(f"Invalid domain '{domain}' provided for email search.")
 
         start_url = f"{self.base_url}/v2/emails-by-domain-by-name/start"
         headers = self.get_headers()
@@ -324,7 +395,16 @@ class SnovioClient:
         logger.warning("Polling timed out. No email address was resolved.")
         return None
 
-    def add_prospect_to_list(self, list_id: str, email: str, first_name: str, last_name: str) -> bool:
+    def add_prospect_to_list(
+        self, 
+        list_id: str, 
+        email: str, 
+        first_name: str, 
+        last_name: str,
+        company_name: Optional[str] = None,
+        company_domain: Optional[str] = None,
+        linkedin_url: Optional[str] = None
+    ) -> bool:
         """
         Adds a prospect to a Snov.io list with rate-limit retry handling.
         """
@@ -338,15 +418,37 @@ class SnovioClient:
             "updateContact": 1
         }
         
+        if company_name:
+            payload["companyName"] = company_name
+        if company_domain:
+            if not company_domain.startswith("http://") and not company_domain.startswith("https://"):
+                payload["companySite"] = f"https://{company_domain}"
+            else:
+                payload["companySite"] = company_domain
+        if linkedin_url:
+            formatted_linkedin = linkedin_url.strip()
+            if not formatted_linkedin.endswith("&social"):
+                if formatted_linkedin.endswith("/"):
+                    formatted_linkedin += "&social"
+                else:
+                    formatted_linkedin += "/&social"
+            payload["socialLinks[linkedIn]"] = formatted_linkedin
+            
         logger.info(f"Adding prospect {first_name} {last_name} ({email}) to list {list_id}...")
         
         max_retries = 4
         backoff = 3.0
         
         for attempt in range(max_retries):
-            headers = self.get_headers()
+            token = self.get_valid_token()
+            headers = {
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/x-www-form-urlencoded"
+            }
+            payload_with_token = payload.copy()
+            payload_with_token["access_token"] = token
             try:
-                response = requests.post(url, json=payload, headers=headers, timeout=15)
+                response = requests.post(url, data=payload_with_token, headers=headers, timeout=15)
                 if response.status_code == 429:
                     logger.warning(f"Snov.io rate limit (429) hit during list addition. Retrying in {backoff} seconds...")
                     time.sleep(backoff)
