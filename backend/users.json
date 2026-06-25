@@ -1,0 +1,17 @@
+[
+  {
+    "email": "dinesh@colorwhistle.com",
+    "password_hash": "1152fe077184e3d9617522573a2a2e8f:e2579e34db5a456104449b21ee0f73042a17bbb4cdef597d2d55e6c05643e74f",
+    "name": "Dinesh"
+  },
+  {
+    "email": "sankar@colorwhistle.com",
+    "password_hash": "b5264a0b375f601efb4eec95fac92c96:a1850a882437920fb7cc81450601d8a5a8d948622e5b0251064baf26ad1a0f71",
+    "name": "Sankar"
+  },
+  {
+    "email": "rajeev@colorwhistle.com",
+    "password_hash": "89a5373f9fb1711a249d6cd3afd7d6fd:700c7d0a2712f3508410ee3f08d6545d2b7711d1efc5eb6c18e6b8eaf4d4ebe8",
+    "name": "Rajeev"
+  }
+]

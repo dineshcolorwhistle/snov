@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { apiFetch } from '../utils/api';
 
 export default function CreateListModal({ isOpen, onClose, onSuccess, lists }) {
   const [listName, setListName] = useState('');
@@ -41,7 +42,7 @@ export default function CreateListModal({ isOpen, onClose, onSuccess, lists }) {
 
     setIsLoading(true);
     try {
-      const response = await fetch('/api/lists', {
+      const response = await apiFetch('/api/lists', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: listName.trim() }),

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { apiFetch } from '../utils/api';
 
 function parseCSV(text) {
   const lines = [];
@@ -145,7 +146,7 @@ export default function AddProspectModal({ list, isOpen, onClose, onSuccess }) {
       if (cleanedDomain.startsWith('https://')) cleanedDomain = cleanedDomain.slice(8);
       if (cleanedDomain.startsWith('www.')) cleanedDomain = cleanedDomain.slice(4);
 
-      const apiPromise = fetch('/api/prospects', {
+      const apiPromise = apiFetch('/api/prospects', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -332,7 +333,7 @@ export default function AddProspectModal({ list, isOpen, onClose, onSuccess }) {
           formData.append('list_id', list.id);
           formData.append('file', csvBlob, 'batch.csv');
           
-          const response = await fetch('/api/prospects/bulk', {
+          const response = await apiFetch('/api/prospects/bulk', {
             method: 'POST',
             body: formData,
           });

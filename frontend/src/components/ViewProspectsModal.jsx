@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { apiFetch } from '../utils/api';
 
 const formatDate = (dateStr) => {
   if (!dateStr) return '';
@@ -43,7 +44,7 @@ export default function ViewProspectsModal({ list, isOpen, onClose }) {
     setIsLoading(true);
     setError(null);
     try {
-      const response = await fetch(`/api/lists/${list.id}/prospects?page=${page}&limit=${limit}`);
+      const response = await apiFetch(`/api/lists/${list.id}/prospects?page=${page}&limit=${limit}`);
       const data = await response.json();
 
       if (response.ok && data.success) {

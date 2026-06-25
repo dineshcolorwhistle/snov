@@ -3,6 +3,8 @@ import ProspectLists from './components/ProspectLists';
 import AddProspectModal from './components/AddProspectModal';
 import CreateListModal from './components/CreateListModal';
 import ViewProspectsModal from './components/ViewProspectsModal';
+import Login from './components/Login';
+import { apiFetch } from './utils/api';
 
 function App() {
   const [lists, setLists] = useState([]);
@@ -13,6 +15,10 @@ function App() {
   const [viewingList, setViewingList] = useState(null);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [toasts, setToasts] = useState([]);
+  
+  // Authentication states
+  const [user, setUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
 
   const addToast = (type, title, message) => {
     const id = `${Date.now()}-${Math.random()}`;
@@ -31,7 +37,7 @@ function App() {
   const fetchLists = async (silent = false) => {
     if (!silent) setIsLoading(true);
     try {
-      const response = await fetch('/api/lists');
+      const response = await apiFetch('/api/lists');
       const data = await response.json();
       
       if (response.ok && data.success) {
@@ -54,9 +60,65 @@ function App() {
     }
   };
 
+  // Check auth status on mount
   useEffect(() => {
-    fetchLists();
+    const checkAuth = async () => {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        setAuthLoading(false);
+        return;
+      }
+      try {
+        const response = await fetch('/api/auth/me', {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        if (response.ok) {
+          const userData = await response.json();
+          setUser(userData);
+        } else {
+          localStorage.removeItem('token');
+        }
+      } catch (err) {
+        console.error('Error checking auth', err);
+      } finally {
+        setAuthLoading(false);
+      }
+    };
+    checkAuth();
   }, []);
+
+  // Fetch lists when user logs in
+  useEffect(() => {
+    if (user) {
+      fetchLists();
+    }
+  }, [user]);
+
+  // Handle unauthorized event across components
+  useEffect(() => {
+    const handleUnauthorized = () => {
+      setUser(null);
+      addToast('warning', 'Session Expired', 'Your session has expired. Please sign in again.');
+    };
+    window.addEventListener('auth-unauthorized', handleUnauthorized);
+    return () => {
+      window.removeEventListener('auth-unauthorized', handleUnauthorized);
+    };
+  }, []);
+
+  const handleLoginSuccess = (token, loggedInUser) => {
+    localStorage.setItem('token', token);
+    setUser(loggedInUser);
+    addToast('success', 'Welcome Back', `Logged in successfully as ${loggedInUser.name}.`);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    setUser(null);
+    addToast('success', 'Logged Out', 'You have been logged out.');
+  };
 
   const handleAddProspectClick = (list) => {
     setSelectedList(list);
@@ -95,6 +157,41 @@ function App() {
     setIsModalOpen(true);
   };
 
+  if (authLoading) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh' }}>
+        <div className="status-spinner"></div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <>
+        <Login onLoginSuccess={handleLoginSuccess} />
+        {/* Toast Alert notifications stack */}
+        <div className="toast-container">
+          {toasts.map((toast) => (
+            <div key={toast.id} className={`toast toast-${toast.type}`}>
+              <span className={`toast-icon toast-icon-${toast.type}`}>
+                {toast.type === 'success' && '✓'}
+                {toast.type === 'error' && '✕'}
+                {toast.type === 'warning' && '⚠'}
+              </span>
+              <div className="toast-content">
+                <div className="toast-title">{toast.title}</div>
+                <div className="toast-message">{toast.message}</div>
+              </div>
+              <button className="toast-close" onClick={() => removeToast(toast.id)}>
+                &times;
+              </button>
+            </div>
+          ))}
+        </div>
+      </>
+    );
+  }
+
   return (
     <>
       <header className="app-header">
@@ -103,7 +200,11 @@ function App() {
           <span className="logo-text">Snov.io</span>
           <span className="logo-badge">Automation</span>
         </div>
-        <div style={{ display: 'flex', gap: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <div className="user-profile-badge">
+            <span className="user-avatar">{user.name[0].toUpperCase()}</span>
+            <span>{user.name}</span>
+          </div>
           <button 
             className="btn btn-primary" 
             onClick={() => setIsCreateModalOpen(true)}
@@ -132,6 +233,13 @@ function App() {
               <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
             </svg>
             Refresh Lists
+          </button>
+          <button 
+            className="btn btn-secondary" 
+            onClick={handleLogout} 
+            style={{ padding: '8px 16px', fontSize: '13px', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#f87171' }}
+          >
+            Logout
           </button>
         </div>
       </header>

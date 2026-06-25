@@ -3,12 +3,21 @@ import logging
 import csv
 import io
 import re
+import json
 import concurrent.futures
-from fastapi import FastAPI, HTTPException, status, File, UploadFile, Form
+from typing import Optional
+from fastapi import FastAPI, HTTPException, status, File, UploadFile, Form, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field, field_validator
 from dotenv import load_dotenv
 from snov_client import SnovioClient
+from auth_utils import (
+    hash_password,
+    verify_password,
+    create_access_token,
+    decode_access_token
+)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -16,6 +25,79 @@ logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
+
+USERS_FILE = os.path.join(os.path.dirname(__file__), "users.json")
+
+def init_users():
+    """
+    Initializes backend/users.json with default users if the file does not exist.
+    """
+    if not os.path.exists(USERS_FILE):
+        default_users = [
+            {
+                "email": "dinesh@colorwhistle.com",
+                "password_hash": hash_password("Dinesh@#12312"),
+                "name": "Dinesh"
+            },
+            {
+                "email": "sankar@colorwhistle.com",
+                "password_hash": hash_password("Sankar@#12312"),
+                "name": "Sankar"
+            },
+            {
+                "email": "rajeev@colorwhistle.com",
+                "password_hash": hash_password("Rajeev@#12312"),
+                "name": "Rajeev"
+            }
+        ]
+        try:
+            with open(USERS_FILE, "w", encoding="utf-8") as f:
+                json.dump(default_users, f, indent=2)
+            logger.info(f"Initialized {USERS_FILE} with default users.")
+        except Exception as e:
+            logger.error(f"Failed to initialize users.json: {e}")
+
+def load_users():
+    if not os.path.exists(USERS_FILE):
+        init_users()
+    try:
+        with open(USERS_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        logger.error(f"Error loading users: {e}")
+        return []
+
+# Call init_users on script load to ensure database is created immediately
+init_users()
+
+security = HTTPBearer()
+
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    token = credentials.credentials
+    payload = decode_access_token(token)
+    if not payload:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    email: str = payload.get("sub")
+    if email is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    users = load_users()
+    user = next((u for u in users if u["email"].lower() == email.lower()), None)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return user
 
 app = FastAPI(title="Snov.io Integration API")
 
@@ -55,6 +137,39 @@ def get_client() -> SnovioClient:
         )
     return client
 
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+@app.post("/api/auth/login")
+async def login(request: LoginRequest):
+    users = load_users()
+    user = next((u for u in users if u["email"].lower() == request.email.strip().lower()), None)
+    if not user or not verify_password(request.password, user["password_hash"]):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect email or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    # Generate access token
+    access_token = create_access_token(data={"sub": user["email"]})
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": {
+            "email": user["email"],
+            "name": user["name"]
+        }
+    }
+
+@app.get("/api/auth/me")
+async def read_users_me(current_user: dict = Depends(get_current_user)):
+    return {
+        "email": current_user["email"],
+        "name": current_user["name"]
+    }
+
 class ProspectRequest(BaseModel):
     list_id: str = Field(..., description="ID of the Snov.io prospect list to add to")
     first_name: str = Field(..., description="First name of the prospect")
@@ -87,7 +202,7 @@ class ProspectRequest(BaseModel):
         return domain
 
 @app.get("/api/lists")
-async def get_lists():
+async def get_lists(current_user: dict = Depends(get_current_user)):
     """
     Exposes Snov.io prospect lists to the React frontend.
     """
@@ -103,7 +218,7 @@ async def get_lists():
         )
 
 @app.get("/api/lists/{list_id}/prospects")
-async def get_list_prospects(list_id: str, page: int = 1, limit: int = 20):
+async def get_list_prospects(list_id: str, page: int = 1, limit: int = 20, current_user: dict = Depends(get_current_user)):
     """
     Retrieves prospects in a specific list, with pagination support.
     Enriches prospect lists with custom fields (firstName, lastName, companyName, companySite, linkedinUrl).
@@ -183,7 +298,7 @@ class CreateListRequest(BaseModel):
         return stripped
 
 @app.post("/api/lists")
-async def create_list(request: CreateListRequest):
+async def create_list(request: CreateListRequest, current_user: dict = Depends(get_current_user)):
     """
     Creates a new prospect list in Snov.io after validating it doesn't already exist.
     """
@@ -227,7 +342,7 @@ async def create_list(request: CreateListRequest):
         )
 
 @app.post("/api/prospects")
-async def add_prospect(request: ProspectRequest):
+async def add_prospect(request: ProspectRequest, current_user: dict = Depends(get_current_user)):
     """
     Attempts to find a business email for the prospect, and adds the
     prospect to the specified Snov.io list if found.
@@ -360,7 +475,7 @@ def make_dummy_email(first_name: str, last_name: str, company: str) -> str:
     return f"{fn}.{ln}@{comp}.no-email-found-cw1.com"
 
 @app.post("/api/prospects/bulk")
-async def bulk_add_prospects(list_id: str = Form(...), file: UploadFile = File(...)):
+async def bulk_add_prospects(list_id: str = Form(...), file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
     """
     Accepts a CSV file of prospects, parses and validates headers,
     and concurrently resolves emails and adds them to Snov.io.
