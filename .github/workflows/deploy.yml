@@ -1,0 +1,35 @@
+name: Deploy to Staging
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    name: Deploy Application
+    runs-on: ubuntu-latest
+    environment: Staging  # Pulls secrets from the 'Staging' environment
+
+    steps:
+      - name: Checkout repository code
+        uses: actions/checkout@v4
+
+      - name: Execute deployment via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          port: ${{ secrets.SSH_PORT }}
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            cd /home/agentwhistle-snov-automation/htdocs/snov-automation.agentwhistle.com/snov
+            echo "========================================="
+            echo "📥 Pulling latest code from Git..."
+            echo "========================================="
+            git pull origin main
+            
+            echo "========================================="
+            echo "🛠️ Executing deployment script..."
+            echo "========================================="
+            bash deploy.sh
