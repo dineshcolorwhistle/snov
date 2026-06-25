@@ -18,12 +18,12 @@ const formatDate = (dateStr) => {
 
 const SkeletonRow = () => (
   <tr className="skeleton-row">
-    <td>
-      <div className="skeleton-cell" style={{ width: '120px' }}></div>
-    </td>
-    <td>
-      <div className="skeleton-cell" style={{ width: '200px' }}></div>
-    </td>
+    <td><div className="skeleton-cell" style={{ width: '80px' }}></div></td>
+    <td><div className="skeleton-cell" style={{ width: '80px' }}></div></td>
+    <td><div className="skeleton-cell" style={{ width: '120px' }}></div></td>
+    <td><div className="skeleton-cell" style={{ width: '140px' }}></div></td>
+    <td><div className="skeleton-cell" style={{ width: '160px' }}></div></td>
+    <td><div className="skeleton-cell" style={{ width: '100px' }}></div></td>
   </tr>
 );
 
@@ -93,7 +93,7 @@ export default function ViewProspectsModal({ list, isOpen, onClose }) {
       <div 
         className="modal-content view-prospects-modal" 
         onClick={(e) => e.stopPropagation()}
-        style={{ maxWidth: '720px', width: '90%' }}
+        style={{ maxWidth: '1000px', width: '95%' }}
       >
         <button 
           className="modal-close" 
@@ -142,8 +142,12 @@ export default function ViewProspectsModal({ list, isOpen, onClose }) {
               <table className="prospects-table">
                 <thead>
                   <tr>
-                    <th>Name</th>
+                    <th>First Name</th>
+                    <th>Last Name</th>
+                    <th>Company Name</th>
+                    <th>Company Domain</th>
                     <th>Email Address</th>
+                    <th>LinkedIn Profile</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -157,7 +161,7 @@ export default function ViewProspectsModal({ list, isOpen, onClose }) {
                     </>
                   ) : prospects.length === 0 ? (
                     <tr>
-                      <td colSpan="2" className="empty-table-cell">
+                      <td colSpan="6" className="empty-table-cell">
                         No prospects found in this list.
                       </td>
                     </tr>
@@ -169,11 +173,25 @@ export default function ViewProspectsModal({ list, isOpen, onClose }) {
                         
                       return (
                         <tr key={prospect.id}>
-                          <td className="prospect-name-cell">
-                            {prospect.name || `${prospect.firstName} ${prospect.lastName}` || 'Unnamed Prospect'}
-                          </td>
+                          <td>{prospect.firstName || '-'}</td>
+                          <td>{prospect.lastName || '-'}</td>
+                          <td>{prospect.companyName || '-'}</td>
+                          <td>{prospect.companySite || '-'}</td>
                           <td className={email ? 'prospect-email-cell' : 'prospect-no-email-cell'}>
-                            {email ? email : 'No email found'}
+                            {email ? email : '-'}
+                          </td>
+                          <td>
+                            {prospect.linkedinUrl ? (
+                              <a 
+                                href={prospect.linkedinUrl.replace(/&amp;/g, '&')} 
+                                target="_blank" 
+                                rel="noopener noreferrer" 
+                                className="linkedin-link"
+                                style={{ color: 'var(--primary)', textDecoration: 'underline' }}
+                              >
+                                View Profile
+                              </a>
+                            ) : '-'}
                           </td>
                         </tr>
                       );

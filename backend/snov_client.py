@@ -535,3 +535,23 @@ class SnovioClient:
                 time.sleep(backoff)
                 backoff *= 2.0
 
+    def get_prospect_details(self, prospect_id: str) -> Dict[str, Any]:
+        """
+        Fetches full details of a prospect by ID.
+        """
+        url = f"{self.base_url}/v1/get-prospect-by-id"
+        headers = self.get_headers()
+        payload = {"id": prospect_id}
+        
+        try:
+            response = requests.post(url, json=payload, headers=headers, timeout=10)
+            response.raise_for_status()
+            data = response.json()
+            if data.get("success") and "data" in data:
+                return data["data"]
+            return {}
+        except Exception as e:
+            logger.error(f"Error fetching prospect details for ID {prospect_id}: {e}")
+            return {}
+
+

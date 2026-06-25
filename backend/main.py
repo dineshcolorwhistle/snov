@@ -106,6 +106,7 @@ async def get_lists():
 async def get_list_prospects(list_id: str, page: int = 1, limit: int = 20):
     """
     Retrieves prospects in a specific list, with pagination support.
+    Enriches prospect lists with custom fields (firstName, lastName, companyName, companySite, linkedinUrl).
     """
     if page < 1:
         raise HTTPException(
@@ -121,6 +122,46 @@ async def get_list_prospects(list_id: str, page: int = 1, limit: int = 20):
     snov_client = get_client()
     try:
         data = snov_client.get_prospects_by_list(list_id=list_id, page=page, per_page=limit)
+        prospects = data.get("prospects") or []
+        
+        def enrich_prospect(prospect):
+            pid = prospect.get("id")
+            if not pid:
+                return prospect
+            
+            details = snov_client.get_prospect_details(pid)
+            
+            company_name = None
+            company_site = None
+            current_jobs = details.get("currentJob") or []
+            if current_jobs and isinstance(current_jobs, list):
+                job = current_jobs[0]
+                if isinstance(job, dict):
+                    company_name = job.get("companyName")
+                    company_site = job.get("site")
+            
+            linkedin_url = None
+            social_links = details.get("socialLinks") or details.get("social") or []
+            if social_links and isinstance(social_links, list):
+                for link_obj in social_links:
+                    if isinstance(link_obj, dict):
+                        link = link_obj.get("link")
+                        source = link_obj.get("source") or link_obj.get("type") or ""
+                        if "linkedin" in source.lower() or "linkedin" in (link or "").lower():
+                            if not linkedin_url or (link and "&social" not in link and "&amp;social" not in link):
+                                linkedin_url = link
+            
+            prospect["companyName"] = company_name
+            prospect["companySite"] = company_site
+            prospect["linkedinUrl"] = linkedin_url
+            return prospect
+
+        if prospects:
+            max_workers = min(10, len(prospects))
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+                enriched_prospects = list(executor.map(enrich_prospect, prospects))
+                data["prospects"] = enriched_prospects
+                
         return data
     except Exception as e:
         logger.error(f"Error fetching prospects for list {list_id}: {e}")

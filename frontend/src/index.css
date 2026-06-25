@@ -1103,12 +1103,13 @@ h1 {
   width: 100%;
   border: 1px solid var(--border-glass);
   border-radius: 12px;
-  overflow: hidden;
+  overflow-x: auto;
   background: rgba(18, 20, 29, 0.3);
 }
 
 .prospects-table {
   width: 100%;
+  min-width: 950px;
   border-collapse: collapse;
   text-align: left;
   font-size: 14px;
