@@ -220,9 +220,13 @@ function App() {
     <>
       <header className="app-header">
         <div className="logo-container">
-          <span className="logo-icon">{platform === 'snov' ? 'S' : 'H'}</span>
-          <span className="logo-text">{platform === 'snov' ? 'Snov.io' : 'Hunter.io'}</span>
-          <span className="logo-badge">Automation</span>
+          <span className="logo-text">Leadwhistle</span>
+          <img 
+            src="https://colorwhistle.com/wp-content/uploads/2022/01/ColorWhistle-Minature-Logo.svg" 
+            alt="Whistle Logo" 
+            className="logo-img"
+            style={{ width: '22px', height: '22px', display: 'block' }}
+          />
         </div>
 
         {/* Platform Selector Switch */}
@@ -378,6 +382,7 @@ function App() {
         isOpen={isModalOpen}
         onClose={handleModalClose}
         onSuccess={handleProspectAdded}
+        lists={lists}
       />
 
       <CreateListModal

@@ -72,9 +72,13 @@ export default function Login({ onLoginSuccess }) {
     <div className="login-page-wrapper">
       <div className="login-card">
         <div className="login-logo">
-          <span className="logo-icon">S</span>
-          <span className="logo-text">LeadFlow</span>
-          <span className="logo-badge">Automation</span>
+          <span className="logo-text">Leadwhistle</span>
+          <img 
+            src="https://colorwhistle.com/wp-content/uploads/2022/01/ColorWhistle-Minature-Logo.svg" 
+            alt="Whistle Logo" 
+            className="logo-img"
+            style={{ width: '22px', height: '22px', display: 'block' }}
+          />
         </div>
         <h2 className="login-title">Sign In</h2>
         <p className="login-subtitle">Enter your Supabase credentials to access the dashboard</p>

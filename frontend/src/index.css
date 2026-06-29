@@ -411,6 +411,11 @@ h1 {
   color: var(--text-muted);
 }
 
+select.form-input option {
+  background-color: #11131c;
+  color: var(--text-primary);
+}
+
 .form-error-msg {
   color: var(--error);
   font-size: 12px;

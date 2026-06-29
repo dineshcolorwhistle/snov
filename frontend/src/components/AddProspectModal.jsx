@@ -44,7 +44,7 @@ const makeCSVBlob = (batchRows) => {
   return new Blob([csvText], { type: 'text/csv' });
 };
 
-export default function AddProspectModal({ list, isOpen, onClose, onSuccess }) {
+export default function AddProspectModal({ list, isOpen, onClose, onSuccess, lists = [] }) {
   const activePlatform = localStorage.getItem('active_platform') || 'snov';
   const platformName = activePlatform === 'snov' ? 'Snov.io' : 'Hunter.io';
 
@@ -63,6 +63,7 @@ export default function AddProspectModal({ list, isOpen, onClose, onSuccess }) {
   const [dragActive, setDragActive] = useState(false);
   const [bulkResults, setBulkResults] = useState(null);
   const [verifyEmails, setVerifyEmails] = useState(true);
+  const [unverifiedListId, setUnverifiedListId] = useState('');
 
   // Batching & progress tracking states
   const [progress, setProgress] = useState(0);
@@ -93,6 +94,7 @@ export default function AddProspectModal({ list, isOpen, onClose, onSuccess }) {
       setDragActive(false);
       setBulkResults(null);
       setVerifyEmails(true);
+      setUnverifiedListId('');
       setProgress(0);
       setTotalProspects(0);
       setProcessedProspects(0);
@@ -236,6 +238,10 @@ export default function AddProspectModal({ list, isOpen, onClose, onSuccess }) {
       setErrors({ file: 'Please upload a CSV file' });
       return;
     }
+    if (verifyEmails && !unverifiedListId) {
+      setErrors({ unverifiedList: 'Please select a list for unverified email addresses' });
+      return;
+    }
     
     const reader = new FileReader();
     reader.onerror = () => {
@@ -344,6 +350,9 @@ export default function AddProspectModal({ list, isOpen, onClose, onSuccess }) {
           
           const formData = new FormData();
           formData.append('list_id', list.id);
+          if (verifyEmails) {
+            formData.append('unverified_list_id', unverifiedListId);
+          }
           formData.append('file', csvBlob, 'batch.csv');
           formData.append('verify_emails', verifyEmails);
           
@@ -563,6 +572,37 @@ export default function AddProspectModal({ list, isOpen, onClose, onSuccess }) {
                     <span className="toggle-slider"></span>
                   </label>
                 </div>
+
+                {verifyEmails && (
+                  <div className="form-group" style={{ marginTop: '16px', textAlign: 'left' }}>
+                    <label className="form-label" htmlFor="unverified-list-select">
+                      Unverified Prospects List
+                    </label>
+                    <select
+                      id="unverified-list-select"
+                      className="form-input"
+                      value={unverifiedListId}
+                      onChange={(e) => {
+                        setUnverifiedListId(e.target.value);
+                        if (errors.unverifiedList) {
+                          setErrors(prev => ({ ...prev, unverifiedList: null }));
+                        }
+                      }}
+                    >
+                      <option value="">-- Select a list for unverified emails --</option>
+                      {lists
+                        .filter((l) => l.id !== list.id)
+                        .map((l) => (
+                          <option key={l.id} value={l.id}>
+                            {l.name}
+                          </option>
+                        ))}
+                    </select>
+                    {errors.unverifiedList && (
+                      <span className="form-error-msg">{errors.unverifiedList}</span>
+                    )}
+                  </div>
+                )}
 
                 <div className="upload-note">
                   <strong>Note:</strong> The CSV file must contain these five headers:

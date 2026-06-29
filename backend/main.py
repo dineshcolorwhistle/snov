@@ -401,6 +401,7 @@ async def add_prospect(
 @app.post("/api/prospects/bulk")
 async def bulk_add_prospects(
     list_id: str = Form(...),
+    unverified_list_id: str = Form(None),
     file: UploadFile = File(...),
     platform: str = Form("snov"),
     verify_emails: bool = Form(True),
@@ -410,6 +411,12 @@ async def bulk_add_prospects(
     Accepts a CSV file of prospects, processes them concurrently,
     verifies emails, and logs any failures to Supabase.
     """
+    if verify_emails and not unverified_list_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="An unverified list must be specified when email verification is enabled."
+        )
+        
     contents = await file.read()
     
     if not file.filename.endswith('.csv'):
@@ -557,19 +564,36 @@ async def bulk_add_prospects(
             verification = client.verify_email(email)
             if not verification.get("verified"):
                 status_str = verification.get("status", "unverified")
-                reason = f"Email unverified (status: {status_str})"
-                db.log_email_unverified(
-                    uid, first_name, last_name, company_name,
-                    target_domain, email, linkedin_url, status_str, platform,
-                    location=row_location, title=row_title
-                )
-                return {
-                    "success": False,
-                    "first_name": first_name,
-                    "last_name": last_name,
-                    "company": domain_or_name,
-                    "reason": reason
-                }
+                try:
+                    added = client.add_prospect_to_list(
+                        list_id=unverified_list_id,
+                        email=email,
+                        first_name=first_name,
+                        last_name=last_name,
+                        company_name=company_name,
+                        company_domain=target_domain,
+                        linkedin_url=linkedin_url,
+                        location=row_location,
+                        title=row_title
+                    )
+                    if added:
+                        return {"success": True}
+                    else:
+                        return {
+                            "success": False,
+                            "first_name": first_name,
+                            "last_name": last_name,
+                            "company": domain_or_name,
+                            "reason": f"Failed to add unverified lead to unverified list"
+                        }
+                except Exception as e:
+                    return {
+                        "success": False,
+                        "first_name": first_name,
+                        "last_name": last_name,
+                        "company": domain_or_name,
+                        "reason": f"API error adding unverified lead: {str(e)}"
+                    }
 
         # 5. Add to List
         try:
