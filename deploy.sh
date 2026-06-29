@@ -48,6 +48,18 @@ cd frontend
 echo "📦 Installing npm dependencies..."
 npm install
 
+# Verify if frontend/.env file exists with required keys
+if [ ! -f ".env" ]; then
+  echo "⚠️  WARNING: frontend/.env file is missing! VITE_SUPABASE_ANON_KEY must be set before building."
+  echo "   Vite env vars are baked in at build time. Create frontend/.env with:"
+  echo "   VITE_SUPABASE_URL=https://ocydnvzzvfucjxdjochw.supabase.co"
+  echo "   VITE_SUPABASE_ANON_KEY=your_key_here"
+elif ! grep -q "VITE_SUPABASE_ANON_KEY=.\+" .env; then
+  echo "⚠️  WARNING: VITE_SUPABASE_ANON_KEY is empty in frontend/.env! Login will ask for manual key entry."
+else
+  echo "✅ frontend/.env file is present with VITE_SUPABASE_ANON_KEY."
+fi
+
 echo "🛠️ Building static assets for production..."
 npm run build
 
