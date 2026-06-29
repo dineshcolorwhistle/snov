@@ -8,11 +8,11 @@
   --border-glass: rgba(255, 255, 255, 0.08);
   --border-glass-active: rgba(102, 252, 241, 0.35);
   
-  --primary: #66fcf1;       /* Cyan neon */
-  --primary-hover: #45e3d7;
-  --secondary: #4f46e5;     /* Indigo */
-  --secondary-hover: #4338ca;
-  --accent: #8b5cf6;        /* Purple */
+  --primary: #8b5cf6;       /* Default Snov purple */
+  --primary-hover: #7c3aed;
+  --secondary: #3b82f6;     /* Blue */
+  --secondary-hover: #2563eb;
+  --accent: #8b5cf6;        
   
   --text-primary: #f3f4f6;
   --text-secondary: #9ca3af;
@@ -25,9 +25,28 @@
   /* Layout */
   --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
   --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  --shadow-neon: 0 0 20px rgba(102, 252, 241, 0.15);
-  --shadow-neon-hover: 0 0 30px rgba(102, 252, 241, 0.3);
+  --shadow-neon: 0 0 20px rgba(139, 92, 246, 0.15);
+  --shadow-neon-hover: 0 0 30px rgba(139, 92, 246, 0.3);
 }
+
+body.theme-snov {
+  --primary: #8b5cf6;       /* Violet/Purple for Snov */
+  --primary-hover: #7c3aed;
+  --secondary: #3b82f6;     
+  --secondary-hover: #2563eb;
+  --shadow-neon: 0 0 20px rgba(139, 92, 246, 0.15);
+  --shadow-neon-hover: 0 0 30px rgba(139, 92, 246, 0.3);
+}
+
+body.theme-hunter {
+  --primary: #f97316;       /* Orange for Hunter */
+  --primary-hover: #ea580c;
+  --secondary: #f59e0b;     
+  --secondary-hover: #d97706;
+  --shadow-neon: 0 0 20px rgba(249, 115, 22, 0.15);
+  --shadow-neon-hover: 0 0 30px rgba(249, 115, 22, 0.3);
+}
+
 
 * {
   box-sizing: border-box;

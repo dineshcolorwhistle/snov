@@ -1,10 +1,21 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { getSupabase, initializeSupabase } from '../utils/supabaseClient';
 
 export default function Login({ onLoginSuccess }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [supabaseAnonKey, setSupabaseAnonKey] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  
+  // Check if anon key is configured in env or localStorage
+  const hasEnvAnonKey = !!import.meta.env.VITE_SUPABASE_ANON_KEY;
+  const [needsAnonKey, setNeedsAnonKey] = useState(false);
+
+  useEffect(() => {
+    const supabase = getSupabase();
+    setNeedsAnonKey(!supabase && !hasEnvAnonKey);
+  }, [hasEnvAnonKey]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -12,23 +23,46 @@ export default function Login({ onLoginSuccess }) {
       setError('Both email and password are required');
       return;
     }
+    
+    if (needsAnonKey && !supabaseAnonKey.trim()) {
+      setError('Supabase Anon Key is required to connect to your project');
+      return;
+    }
+
     setError('');
     setIsLoading(true);
     try {
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim(), password }),
+      let supabase = getSupabase();
+      
+      // If we need to initialize dynamically
+      if (needsAnonKey && supabaseAnonKey.trim()) {
+        supabase = initializeSupabase(supabaseAnonKey.trim());
+      }
+      
+      if (!supabase) {
+        throw new Error('Supabase client is not initialized. Please configure VITE_SUPABASE_ANON_KEY in your frontend/.env file.');
+      }
+
+      const { data, error: authError } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password: password,
       });
-      const data = await response.json();
-      if (response.ok && data.access_token) {
-        onLoginSuccess(data.access_token, data.user);
+
+      if (authError) {
+        setError(authError.message);
+      } else if (data && data.session) {
+        const userPayload = {
+          email: data.user.email,
+          name: data.user.user_metadata?.name || data.user.user_metadata?.full_name || data.user.email.split('@')[0].toUpperCase(),
+          id: data.user.id
+        };
+        onLoginSuccess(data.session.access_token, userPayload);
       } else {
-        setError(data.detail || 'Invalid email or password');
+        setError('Login failed. Please check your credentials.');
       }
     } catch (err) {
       console.error(err);
-      setError('Could not connect to backend server');
+      setError(err.message || 'Could not connect to Supabase');
     } finally {
       setIsLoading(false);
     }
@@ -39,11 +73,11 @@ export default function Login({ onLoginSuccess }) {
       <div className="login-card">
         <div className="login-logo">
           <span className="logo-icon">S</span>
-          <span className="logo-text">Snov.io</span>
+          <span className="logo-text">LeadFlow</span>
           <span className="logo-badge">Automation</span>
         </div>
         <h2 className="login-title">Sign In</h2>
-        <p className="login-subtitle">Enter your credentials to access the dashboard</p>
+        <p className="login-subtitle">Enter your Supabase credentials to access the dashboard</p>
         
         {error && (
           <div className="login-error">
@@ -53,6 +87,28 @@ export default function Login({ onLoginSuccess }) {
         )}
 
         <form onSubmit={handleSubmit}>
+          {needsAnonKey && (
+            <div className="form-group" style={{ background: 'rgba(245, 158, 11, 0.05)', padding: '12px', borderRadius: '8px', border: '1px solid rgba(245, 158, 11, 0.2)', marginBottom: '16px' }}>
+              <label className="form-label" htmlFor="login-anon-key" style={{ color: '#f59e0b', fontWeight: 'bold' }}>
+                Supabase Anon Key *
+              </label>
+              <input
+                id="login-anon-key"
+                type="password"
+                className="form-input"
+                placeholder="Paste your Supabase Project Anon Key"
+                value={supabaseAnonKey}
+                onChange={(e) => setSupabaseAnonKey(e.target.value)}
+                required
+                disabled={isLoading}
+                style={{ borderColor: 'rgba(245, 158, 11, 0.4)' }}
+              />
+              <span style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginTop: '4px' }}>
+                Found in Supabase Dashboard -> Project Settings -> API
+              </span>
+            </div>
+          )}
+
           <div className="form-group">
             <label className="form-label" htmlFor="login-email">Email Address</label>
             <input
@@ -103,7 +159,7 @@ export default function Login({ onLoginSuccess }) {
                 >
                   <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
                 </svg>
-                Signing In...
+                Connecting to Supabase...
               </>
             ) : (
               'Sign In'

@@ -1,17 +1,20 @@
-export const getAuthToken = () => localStorage.getItem('token');
+import { getSupabase } from './supabaseClient';
 
-export const setAuthToken = (token) => {
-  if (token) {
-    localStorage.setItem('token', token);
-  } else {
-    localStorage.removeItem('token');
-  }
+export const getAuthToken = async () => {
+  const supabase = getSupabase();
+  if (!supabase) return null;
+  const { data: { session } } = await supabase.auth.getSession();
+  return session?.access_token || null;
 };
 
 export const apiFetch = async (url, options = {}) => {
-  const token = getAuthToken();
+  const token = await getAuthToken();
+  const activePlatform = localStorage.getItem('active_platform') || 'snov';
   
-  // Set headers correctly depending on whether body is FormData or JSON
+  // Automatically append platform to the URL if not already present
+  const separator = url.includes('?') ? '&' : '?';
+  const finalUrl = url.includes('platform=') ? url : `${url}${separator}platform=${activePlatform}`;
+  
   const headers = {
     ...options.headers,
   };
@@ -20,14 +23,14 @@ export const apiFetch = async (url, options = {}) => {
     headers['Authorization'] = `Bearer ${token}`;
   }
   
-  const response = await fetch(url, {
+  headers['X-Platform'] = activePlatform;
+  
+  const response = await fetch(finalUrl, {
     ...options,
     headers,
   });
   
   if (response.status === 401) {
-    // Clear token as session is invalid or expired
-    localStorage.removeItem('token');
     // Dispatch a custom event to notify App.jsx of unauthorization
     window.dispatchEvent(new Event('auth-unauthorized'));
   }

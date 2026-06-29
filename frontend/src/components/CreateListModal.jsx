@@ -2,6 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { apiFetch } from '../utils/api';
 
 export default function CreateListModal({ isOpen, onClose, onSuccess, lists }) {
+  const activePlatform = localStorage.getItem('active_platform') || 'snov';
+  const platformName = activePlatform === 'snov' ? 'Snov.io' : 'Hunter.io';
+
   const [listName, setListName] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -111,7 +114,7 @@ export default function CreateListModal({ isOpen, onClose, onSuccess, lists }) {
             <div className="status-spinner" />
             <h3 className="status-title">Creating List</h3>
             <p className="status-desc">
-              Registering new prospect list with Snov.io API...
+              Registering new prospect list with {platformName} API...
             </p>
           </div>
         )}

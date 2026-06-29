@@ -1,67 +1,61 @@
 import os
-import hashlib
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+import logging
+import requests
 import jwt
+from typing import Optional
 
-# JWT Configurations
-SECRET_KEY = os.getenv("JWT_SECRET_KEY", "snovio_automation_jwt_secret_key_2026_colorwhistle")
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 120
+logger = logging.getLogger(__name__)
 
-def hash_password(password: str) -> str:
-    """
-    Hashes a password using PBKDF2 with SHA-256 (100,000 iterations).
-    Output format: salt_hex:key_hex
-    """
-    salt = os.urandom(16)
-    key = hashlib.pbkdf2_hmac(
-        'sha256',
-        password.encode('utf-8'),
-        salt,
-        100000
-    )
-    return f"{salt.hex()}:{key.hex()}"
+SUPABASE_URL = os.getenv("SUPABASE_URL", "https://ocydnvzzvfucjxdjochw.supabase.co")
+SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
+SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "")
 
-def verify_password(password: str, hashed_password: str) -> bool:
+def verify_supabase_token(token: str) -> Optional[dict]:
     """
-    Verifies a password against a PBKDF2 hash.
+    Verifies a Supabase JWT token.
+    Tries offline decoding if SUPABASE_JWT_SECRET is set,
+    otherwise falls back to online verification via Supabase Auth API.
     """
-    try:
-        if not hashed_password or ":" not in hashed_password:
-            return False
-        salt_hex, key_hex = hashed_password.split(":")
-        salt = bytes.fromhex(salt_hex)
-        key = bytes.fromhex(key_hex)
-        new_key = hashlib.pbkdf2_hmac(
-            'sha256',
-            password.encode('utf-8'),
-            salt,
-            100000
-        )
-        return key == new_key
-    except Exception:
-        return False
-
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
-    """
-    Generates a signed JWT access token.
-    """
-    to_encode = data.copy()
-    if expires_delta:
-        expire = datetime.now(timezone.utc) + expires_delta
-    else:
-        expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
-
-def decode_access_token(token: str) -> Optional[dict]:
-    """
-    Decodes and validates a signed JWT access token.
-    """
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        return payload
-    except jwt.PyJWTError:
+    if not token:
         return None
+
+    # 1. Try offline verification if secret is provided
+    if SUPABASE_JWT_SECRET:
+        try:
+            payload = jwt.decode(
+                token,
+                SUPABASE_JWT_SECRET,
+                algorithms=["HS256"],
+                options={"verify_aud": False}  # Supabase aud is 'authenticated'
+            )
+            return {
+                "id": payload.get("sub"),
+                "email": payload.get("email"),
+                "name": payload.get("user_metadata", {}).get("name") or payload.get("user_metadata", {}).get("full_name") or payload.get("email", "").split("@")[0].capitalize()
+            }
+        except jwt.PyJWTError as e:
+            logger.error(f"Offline JWT verification failed: {e}")
+            return None
+
+    # 2. Fall back to online verification
+    url = f"{SUPABASE_URL.rstrip('/')}/auth/v1/user"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "apikey": SUPABASE_ANON_KEY if SUPABASE_ANON_KEY else "dummy"  # postgrest/gotrue requires apikey header
+    }
+    try:
+        response = requests.get(url, headers=headers, timeout=10)
+        if response.status_code == 200:
+            user_data = response.json()
+            metadata = user_data.get("user_metadata") or {}
+            return {
+                "id": user_data.get("id"),
+                "email": user_data.get("email"),
+                "name": metadata.get("name") or metadata.get("full_name") or user_data.get("email", "").split("@")[0].capitalize()
+            }
+        else:
+            logger.warning(f"Online token verification failed: {response.status_code} - {response.text}")
+    except Exception as e:
+        logger.error(f"Online token verification error: {e}")
+
+    return None

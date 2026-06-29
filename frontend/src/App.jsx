@@ -3,8 +3,11 @@ import ProspectLists from './components/ProspectLists';
 import AddProspectModal from './components/AddProspectModal';
 import CreateListModal from './components/CreateListModal';
 import ViewProspectsModal from './components/ViewProspectsModal';
+import SettingsModal from './components/SettingsModal';
+import TrackingLogs from './components/TrackingLogs';
 import Login from './components/Login';
 import { apiFetch } from './utils/api';
+import { getSupabase } from './utils/supabaseClient';
 
 function App() {
   const [lists, setLists] = useState([]);
@@ -12,19 +15,30 @@ function App() {
   const [selectedList, setSelectedList] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [viewingList, setViewingList] = useState(null);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [toasts, setToasts] = useState([]);
+  
+  // Navigation: 'dashboard' | 'logs'
+  const [activeView, setActiveView] = useState('dashboard');
+
+  // Platform: 'snov' | 'hunter'
+  const [platform, setPlatform] = useState(localStorage.getItem('active_platform') || 'snov');
   
   // Authentication states
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
 
+  // Set body theme class on platform change
+  useEffect(() => {
+    document.body.className = `theme-${platform}`;
+    localStorage.setItem('active_platform', platform);
+  }, [platform]);
+
   const addToast = (type, title, message) => {
     const id = `${Date.now()}-${Math.random()}`;
     setToasts((prev) => [...prev, { id, type, title, message }]);
-    
-    // Auto-remove after 5 seconds
     setTimeout(() => {
       removeToast(id);
     }, 5000);
@@ -35,15 +49,16 @@ function App() {
   };
 
   const fetchLists = async (silent = false) => {
+    if (!user) return;
     if (!silent) setIsLoading(true);
     try {
-      const response = await apiFetch('/api/lists');
+      const response = await apiFetch(`/api/lists`);
       const data = await response.json();
       
       if (response.ok && data.success) {
         setLists(data.lists);
       } else {
-        const errorMsg = data.detail || 'Failed to fetch prospect lists.';
+        const errorMsg = data.detail || 'Failed to fetch lead lists.';
         addToast('error', 'Error Fetching Lists', errorMsg);
         setLists([]);
       }
@@ -60,41 +75,53 @@ function App() {
     }
   };
 
-  // Check auth status on mount
+  // Check auth status on mount and subscribe to changes
   useEffect(() => {
     const checkAuth = async () => {
-      const token = localStorage.getItem('token');
-      if (!token) {
+      const supabase = getSupabase();
+      if (!supabase) {
         setAuthLoading(false);
         return;
       }
-      try {
-        const response = await fetch('/api/auth/me', {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        });
-        if (response.ok) {
-          const userData = await response.json();
-          setUser(userData);
-        } else {
-          localStorage.removeItem('token');
-        }
-      } catch (err) {
-        console.error('Error checking auth', err);
-      } finally {
-        setAuthLoading(false);
+      
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        const userPayload = {
+          email: session.user.email,
+          name: session.user.user_metadata?.name || session.user.user_metadata?.full_name || session.user.email.split('@')[0].toUpperCase(),
+          id: session.user.id
+        };
+        setUser(userPayload);
       }
+      setAuthLoading(false);
     };
+
     checkAuth();
+
+    const supabase = getSupabase();
+    if (supabase) {
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+        if (session) {
+          const userPayload = {
+            email: session.user.email,
+            name: session.user.user_metadata?.name || session.user.user_metadata?.full_name || session.user.email.split('@')[0].toUpperCase(),
+            id: session.user.id
+          };
+          setUser(userPayload);
+        } else {
+          setUser(null);
+        }
+      });
+      return () => subscription.unsubscribe();
+    }
   }, []);
 
-  // Fetch lists when user logs in
+  // Fetch lists when user or platform changes
   useEffect(() => {
     if (user) {
       fetchLists();
     }
-  }, [user]);
+  }, [user, platform]);
 
   // Handle unauthorized event across components
   useEffect(() => {
@@ -109,13 +136,15 @@ function App() {
   }, []);
 
   const handleLoginSuccess = (token, loggedInUser) => {
-    localStorage.setItem('token', token);
     setUser(loggedInUser);
     addToast('success', 'Welcome Back', `Logged in successfully as ${loggedInUser.name}.`);
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem('token');
+  const handleLogout = async () => {
+    const supabase = getSupabase();
+    if (supabase) {
+      await supabase.auth.signOut();
+    }
     setUser(null);
     addToast('success', 'Logged Out', 'You have been logged out.');
   };
@@ -141,17 +170,13 @@ function App() {
   };
 
   const handleProspectAdded = () => {
-    addToast('success', 'Prospect Added', 'Prospect was successfully added to Snov.io.');
+    addToast('success', 'Lead Added', 'Lead was successfully added to your list.');
     fetchLists(true); // Silent reload to update list totals in the background
   };
 
   const handleCreateListSuccess = (newList, successMsg) => {
     addToast('success', 'List Created', successMsg || `List '${newList.name}' was successfully created.`);
-    
-    // Optimistically prepend to existing lists
     setLists((prev) => [newList, ...prev]);
-    
-    // Close creation modal and immediately open add prospect modal for this new list
     setIsCreateModalOpen(false);
     setSelectedList(newList);
     setIsModalOpen(true);
@@ -169,7 +194,6 @@ function App() {
     return (
       <>
         <Login onLoginSuccess={handleLoginSuccess} />
-        {/* Toast Alert notifications stack */}
         <div className="toast-container">
           {toasts.map((toast) => (
             <div key={toast.id} className={`toast toast-${toast.type}`}>
@@ -196,44 +220,87 @@ function App() {
     <>
       <header className="app-header">
         <div className="logo-container">
-          <span className="logo-icon">S</span>
-          <span className="logo-text">Snov.io</span>
+          <span className="logo-icon">{platform === 'snov' ? 'S' : 'H'}</span>
+          <span className="logo-text">{platform === 'snov' ? 'Snov.io' : 'Hunter.io'}</span>
           <span className="logo-badge">Automation</span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+
+        {/* Platform Selector Switch */}
+        <div style={{
+          display: 'flex',
+          background: 'rgba(255, 255, 255, 0.04)',
+          border: '1px solid var(--border-glass)',
+          padding: '4px',
+          borderRadius: '10px',
+          margin: '0 20px'
+        }}>
+          <button
+            onClick={() => setPlatform('snov')}
+            style={{
+              padding: '6px 16px',
+              border: 'none',
+              borderRadius: '8px',
+              fontSize: '13px',
+              fontWeight: '600',
+              cursor: 'pointer',
+              background: platform === 'snov' ? 'var(--primary)' : 'transparent',
+              color: platform === 'snov' ? '#000' : 'var(--text-secondary)',
+              transition: 'var(--transition-smooth)'
+            }}
+          >
+            Snov.io
+          </button>
+          <button
+            onClick={() => setPlatform('hunter')}
+            style={{
+              padding: '6px 16px',
+              border: 'none',
+              borderRadius: '8px',
+              fontSize: '13px',
+              fontWeight: '600',
+              cursor: 'pointer',
+              background: platform === 'hunter' ? 'var(--primary)' : 'transparent',
+              color: platform === 'hunter' ? '#000' : 'var(--text-secondary)',
+              transition: 'var(--transition-smooth)'
+            }}
+          >
+            Hunter.io
+          </button>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          {/* Navigation links */}
+          <div style={{ display: 'flex', gap: '8px', marginRight: '16px' }}>
+            <button
+              className={`btn ${activeView === 'dashboard' ? 'btn-primary' : 'btn-secondary'}`}
+              onClick={() => setActiveView('dashboard')}
+              style={{ padding: '8px 16px', fontSize: '13px' }}
+            >
+              Dashboard
+            </button>
+            <button
+              className={`btn ${activeView === 'logs' ? 'btn-primary' : 'btn-secondary'}`}
+              onClick={() => setActiveView('logs')}
+              style={{ padding: '8px 16px', fontSize: '13px' }}
+            >
+              Tracking Logs
+            </button>
+          </div>
+
           <div className="user-profile-badge">
             <span className="user-avatar">{user.name[0].toUpperCase()}</span>
             <span>{user.name}</span>
           </div>
+
           <button 
-            className="btn btn-primary" 
-            onClick={() => setIsCreateModalOpen(true)}
-            style={{ padding: '8px 16px', fontSize: '13px' }}
+            className="btn btn-secondary"
+            onClick={() => setIsSettingsOpen(true)}
+            style={{ padding: '8px', borderRadius: '10px' }}
+            title="API Settings"
           >
-            <span style={{ fontSize: '16px', fontWeight: 'bold' }}>+</span>
-            Create List
+            ⚙️
           </button>
-          <button 
-            className="btn btn-secondary" 
-            onClick={() => fetchLists()} 
-            disabled={isLoading}
-            style={{ padding: '8px 16px', fontSize: '13px' }}
-          >
-            <svg 
-              width="14" 
-              height="14" 
-              viewBox="0 0 24 24" 
-              fill="none" 
-              stroke="currentColor" 
-              strokeWidth="2.5" 
-              strokeLinecap="round" 
-              strokeLinejoin="round"
-              style={{ marginRight: '4px', animation: isLoading ? 'spin 1s linear infinite' : 'none' }}
-            >
-              <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
-            </svg>
-            Refresh Lists
-          </button>
+
           <button 
             className="btn btn-secondary" 
             onClick={handleLogout} 
@@ -245,18 +312,65 @@ function App() {
       </header>
 
       <main>
-        <h1>Prospect Lists</h1>
-        <p className="section-desc">
-          Retrieve, manage, and enrich lead campaigns directly from your Snov.io account. Select a list to search for business emails and add prospects.
-        </p>
+        {activeView === 'dashboard' ? (
+          <>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '24px' }}>
+              <div>
+                <h1>{platform === 'snov' ? 'Snov.io' : 'Hunter.io'} Campaigns</h1>
+                <p className="section-desc">
+                  Retrieve, manage, and enrich lead campaigns directly. Select a list to search, verify business emails, and add leads.
+                </p>
+              </div>
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <button 
+                  className="btn btn-primary" 
+                  onClick={() => setIsCreateModalOpen(true)}
+                  style={{ padding: '10px 20px', fontSize: '14px' }}
+                >
+                  <span style={{ fontSize: '16px', fontWeight: 'bold', marginRight: '4px' }}>+</span>
+                  Create List
+                </button>
+                <button 
+                  className="btn btn-secondary" 
+                  onClick={() => fetchLists()} 
+                  disabled={isLoading}
+                  style={{ padding: '10px 20px', fontSize: '14px' }}
+                >
+                  <svg 
+                    width="14" 
+                    height="14" 
+                    viewBox="0 0 24 24" 
+                    fill="none" 
+                    stroke="currentColor" 
+                    strokeWidth="2.5" 
+                    strokeLinecap="round" 
+                    strokeLinejoin="round"
+                    style={{ marginRight: '6px', animation: isLoading ? 'spin 1s linear infinite' : 'none' }}
+                  >
+                    <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
+                  </svg>
+                  Refresh
+                </button>
+              </div>
+            </div>
 
-        <ProspectLists 
-          lists={lists} 
-          isLoading={isLoading} 
-          onAddProspectClick={handleAddProspectClick} 
-          onViewProspectsClick={handleViewProspectsClick}
-          onCreateListClick={() => setIsCreateModalOpen(true)}
-        />
+            <ProspectLists 
+              lists={lists} 
+              isLoading={isLoading} 
+              onAddProspectClick={handleAddProspectClick} 
+              onViewProspectsClick={handleViewProspectsClick}
+              onCreateListClick={() => setIsCreateModalOpen(true)}
+            />
+          </>
+        ) : (
+          <>
+            <h1>Processing & Verification Logs</h1>
+            <p className="section-desc">
+              Track unresolved domains, missing LinkedIn profiles, missing emails, and unverified (risky/invalid) emails filtered by the active platform.
+            </p>
+            <TrackingLogs activePlatform={platform} />
+          </>
+        )}
       </main>
 
       <AddProspectModal 
@@ -277,6 +391,15 @@ function App() {
         list={viewingList}
         isOpen={isViewModalOpen}
         onClose={handleViewModalClose}
+      />
+
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        onSaveSuccess={() => {
+          addToast('success', 'Credentials Saved', 'API settings updated successfully. Reloading campaigns...');
+          fetchLists();
+        }}
       />
 
       {/* Toast Alert notifications stack */}

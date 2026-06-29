@@ -45,6 +45,9 @@ const makeCSVBlob = (batchRows) => {
 };
 
 export default function AddProspectModal({ list, isOpen, onClose, onSuccess }) {
+  const activePlatform = localStorage.getItem('active_platform') || 'snov';
+  const platformName = activePlatform === 'snov' ? 'Snov.io' : 'Hunter.io';
+
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [domain, setDomain] = useState('');
@@ -136,8 +139,8 @@ export default function AddProspectModal({ list, isOpen, onClose, onSuccess }) {
     };
 
     // Trigger sequential UI steps
-    const step1Promise = incrementStep(1, 800);  // "Checking Snov.io authorization..."
-    const step2Promise = step1Promise.then(() => incrementStep(2, 1200)); // "Finding business email address..."
+    const step1Promise = incrementStep(1, 800);  // Checking authorization
+    const step2Promise = step1Promise.then(() => incrementStep(2, 1200)); // Finding business email address
 
     // Call API in parallel
     try {
@@ -565,7 +568,7 @@ export default function AddProspectModal({ list, isOpen, onClose, onSuccess }) {
                 </div>
                 <div className={`step-item ${currentStep === 1 ? 'active' : ''} ${currentStep > 1 ? 'completed' : ''}`}>
                   <div className="step-dot" />
-                  <span>Checking Snov.io authorization...</span>
+                  <span>Checking {platformName} authorization...</span>
                 </div>
                 <div className={`step-item ${currentStep === 2 ? 'active' : ''} ${currentStep > 2 ? 'completed' : ''}`}>
                   <div className="step-dot" />
