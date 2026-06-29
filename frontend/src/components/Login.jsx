@@ -104,7 +104,7 @@ export default function Login({ onLoginSuccess }) {
                 style={{ borderColor: 'rgba(245, 158, 11, 0.4)' }}
               />
               <span style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginTop: '4px' }}>
-                Found in Supabase Dashboard -> Project Settings -> API
+                Found in Supabase Dashboard {'->'} Project Settings {'->'} API
               </span>
             </div>
           )}
