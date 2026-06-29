@@ -64,6 +64,8 @@ def init_db():
         first_name TEXT,
         last_name TEXT,
         company_name TEXT,
+        location TEXT,
+        title TEXT,
         platform TEXT NOT NULL,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
     );
@@ -76,6 +78,8 @@ def init_db():
         last_name TEXT,
         company_name TEXT,
         linkedin_url TEXT,
+        location TEXT,
+        title TEXT,
         platform TEXT NOT NULL,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
     );
@@ -89,6 +93,8 @@ def init_db():
         company_name TEXT,
         domain TEXT,
         linkedin_url TEXT,
+        location TEXT,
+        title TEXT,
         platform TEXT NOT NULL,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
     );
@@ -103,6 +109,8 @@ def init_db():
         domain TEXT,
         email TEXT NOT NULL,
         linkedin_url TEXT,
+        location TEXT,
+        title TEXT,
         verification_status TEXT,
         platform TEXT NOT NULL,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
@@ -175,54 +183,54 @@ def save_user_settings(user_id: str, settings: dict) -> bool:
 
 # --- Logging Functions ---
 
-def log_linkedin_not_found(user_id: str, first_name: str, last_name: str, company_name: str, platform: str):
+def log_linkedin_not_found(user_id: str, first_name: str, last_name: str, company_name: str, platform: str, location: str = None, title: str = None):
     sql = """
-    INSERT INTO public.linkedin_not_found (user_id, first_name, last_name, company_name, platform)
-    VALUES (%s, %s, %s, %s, %s)
-    """
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(sql, (user_id, first_name, last_name, company_name, platform))
-        logger.info(f"Logged missing LinkedIn for {first_name} {last_name} ({platform})")
-    except Exception as e:
-        logger.error(f"Error logging missing LinkedIn: {e}")
-
-def log_domain_not_found(user_id: str, first_name: str, last_name: str, company_name: str, linkedin_url: str, platform: str):
-    sql = """
-    INSERT INTO public.domain_not_found (user_id, first_name, last_name, company_name, linkedin_url, platform)
-    VALUES (%s, %s, %s, %s, %s, %s)
-    """
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(sql, (user_id, first_name, last_name, company_name, linkedin_url, platform))
-        logger.info(f"Logged missing domain for {company_name} ({platform})")
-    except Exception as e:
-        logger.error(f"Error logging missing domain: {e}")
-
-def log_email_not_found(user_id: str, first_name: str, last_name: str, company_name: str, domain: str, linkedin_url: str, platform: str):
-    sql = """
-    INSERT INTO public.email_not_found (user_id, first_name, last_name, company_name, domain, linkedin_url, platform)
+    INSERT INTO public.linkedin_not_found (user_id, first_name, last_name, company_name, location, title, platform)
     VALUES (%s, %s, %s, %s, %s, %s, %s)
     """
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute(sql, (user_id, first_name, last_name, company_name, domain, linkedin_url, platform))
-        logger.info(f"Logged missing email for {first_name} {last_name} @ {domain} ({platform})")
+                cur.execute(sql, (user_id, first_name, last_name, company_name, location, title, platform))
+        logger.info(f"Logged missing LinkedIn for {first_name} {last_name} ({platform})")
     except Exception as e:
-        logger.error(f"Error logging missing email: {e}")
+        logger.error(f"Error logging missing LinkedIn: {e}")
 
-def log_email_unverified(user_id: str, first_name: str, last_name: str, company_name: str, domain: str, email: str, linkedin_url: str, verification_status: str, platform: str):
+def log_domain_not_found(user_id: str, first_name: str, last_name: str, company_name: str, linkedin_url: str, platform: str, location: str = None, title: str = None):
     sql = """
-    INSERT INTO public.email_unverified (user_id, first_name, last_name, company_name, domain, email, linkedin_url, verification_status, platform)
+    INSERT INTO public.domain_not_found (user_id, first_name, last_name, company_name, linkedin_url, location, title, platform)
+    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+    """
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, (user_id, first_name, last_name, company_name, linkedin_url, location, title, platform))
+        logger.info(f"Logged missing domain for {company_name} ({platform})")
+    except Exception as e:
+        logger.error(f"Error logging missing domain: {e}")
+
+def log_email_not_found(user_id: str, first_name: str, last_name: str, company_name: str, domain: str, linkedin_url: str, platform: str, location: str = None, title: str = None):
+    sql = """
+    INSERT INTO public.email_not_found (user_id, first_name, last_name, company_name, domain, linkedin_url, location, title, platform)
     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
     """
     try:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute(sql, (user_id, first_name, last_name, company_name, domain, email, linkedin_url, verification_status, platform))
+                cur.execute(sql, (user_id, first_name, last_name, company_name, domain, linkedin_url, location, title, platform))
+        logger.info(f"Logged missing email for {first_name} {last_name} @ {domain} ({platform})")
+    except Exception as e:
+        logger.error(f"Error logging missing email: {e}")
+
+def log_email_unverified(user_id: str, first_name: str, last_name: str, company_name: str, domain: str, email: str, linkedin_url: str, verification_status: str, platform: str, location: str = None, title: str = None):
+    sql = """
+    INSERT INTO public.email_unverified (user_id, first_name, last_name, company_name, domain, email, linkedin_url, location, title, verification_status, platform)
+    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    """
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, (user_id, first_name, last_name, company_name, domain, email, linkedin_url, location, title, verification_status, platform))
         logger.info(f"Logged unverified email {email} (status: {verification_status}, platform: {platform})")
     except Exception as e:
         logger.error(f"Error logging unverified email: {e}")

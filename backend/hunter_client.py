@@ -180,7 +180,9 @@ class HunterioClient(BaseProvider):
         last_name: str,
         company_name: Optional[str] = None,
         company_domain: Optional[str] = None,
-        linkedin_url: Optional[str] = None
+        linkedin_url: Optional[str] = None,
+        location: Optional[str] = None,
+        title: Optional[str] = None
     ) -> bool:
         """
         Adds a lead to a Hunter.io list.
@@ -201,6 +203,10 @@ class HunterioClient(BaseProvider):
             payload["website"] = company_domain
         if linkedin_url:
             payload["linkedin_url"] = linkedin_url
+        if location:
+            payload["country"] = location
+        if title:
+            payload["position"] = title
             
         try:
             logger.info(f"Adding lead {first_name} {last_name} ({email}) to Hunter.io list {list_id}...")

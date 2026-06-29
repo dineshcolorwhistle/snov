@@ -36,9 +36,9 @@ function parseCSV(text) {
 }
 
 const makeCSVBlob = (batchRows) => {
-  const headerLine = '"First Name","Last Name","Company Domain/Name"';
+  const headerLine = '"First Name","Last Name","Company Name","Location","Title"';
   const rowLines = batchRows.map(row => 
-    `"${row["First Name"].replace(/"/g, '""')}","${row["Last Name"].replace(/"/g, '""')}","${row["Company Domain/Name"].replace(/"/g, '""')}"`
+    `"${row["First Name"].replace(/"/g, '""')}","${row["Last Name"].replace(/"/g, '""')}","${row["Company Name"].replace(/"/g, '""')}","${(row["Location"] || "").replace(/"/g, '""')}","${(row["Title"] || "").replace(/"/g, '""')}"`
   );
   const csvText = [headerLine, ...rowLines].join('\n');
   return new Blob([csvText], { type: 'text/csv' });
@@ -50,7 +50,9 @@ export default function AddProspectModal({ list, isOpen, onClose, onSuccess }) {
 
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
-  const [domain, setDomain] = useState('');
+  const [companyName, setCompanyName] = useState('');
+  const [location, setLocation] = useState('');
+  const [title, setTitle] = useState('');
   const [errors, setErrors] = useState({});
   
   // Tabs: 'single' | 'csv'
@@ -79,7 +81,9 @@ export default function AddProspectModal({ list, isOpen, onClose, onSuccess }) {
     if (isOpen) {
       setFirstName('');
       setLastName('');
-      setDomain('');
+      setCompanyName('');
+      setLocation('');
+      setTitle('');
       setErrors({});
       setStatus('idle');
       setCurrentStep(0);
@@ -110,10 +114,10 @@ export default function AddProspectModal({ list, isOpen, onClose, onSuccess }) {
       newErrors.lastName = 'Last name cannot contain numbers';
     }
 
-    if (!domain.trim()) {
-      newErrors.domain = 'Company domain or name is required';
-    } else if (domain.trim().length < 2) {
-      newErrors.domain = 'Company domain or name must be at least 2 characters';
+    if (!companyName.trim()) {
+      newErrors.companyName = 'Company name is required';
+    } else if (companyName.trim().length < 2) {
+      newErrors.companyName = 'Company name must be at least 2 characters';
     }
 
     setErrors(newErrors);
@@ -144,10 +148,7 @@ export default function AddProspectModal({ list, isOpen, onClose, onSuccess }) {
 
     // Call API in parallel
     try {
-      let cleanedDomain = domain.trim().toLowerCase();
-      if (cleanedDomain.startsWith('http://')) cleanedDomain = cleanedDomain.slice(7);
-      if (cleanedDomain.startsWith('https://')) cleanedDomain = cleanedDomain.slice(8);
-      if (cleanedDomain.startsWith('www.')) cleanedDomain = cleanedDomain.slice(4);
+      let cleanedCompanyName = companyName.trim();
 
       const apiPromise = apiFetch('/api/prospects', {
         method: 'POST',
@@ -156,7 +157,9 @@ export default function AddProspectModal({ list, isOpen, onClose, onSuccess }) {
           list_id: list.id,
           first_name: firstName.trim(),
           last_name: lastName.trim(),
-          domain: cleanedDomain,
+          company_name: cleanedCompanyName,
+          location: location.trim() || null,
+          title: title.trim() || null,
         }),
       });
 
@@ -267,17 +270,19 @@ export default function AddProspectModal({ list, isOpen, onClose, onSuccess }) {
           lower === 'company domain' ||
           lower === 'domain'
         ) {
-          return 'Company Domain/Name';
+          return 'Company Name';
         }
+        if (lower === 'location') return 'Location';
+        if (lower === 'title') return 'Title';
         return h;
       });
 
-      const expectedHeaders = ["First Name", "Last Name", "Company Domain/Name"];
+      const expectedHeaders = ['First Name', 'Last Name', 'Company Name', 'Location', 'Title'];
       
-      // Enforce headers
-      const hasAll = expectedHeaders.every(eh => normalizedHeaders.includes(eh)) && normalizedHeaders.length === 3;
-      if (!hasAll) {
-        setErrors({ file: "The CSV file must contain only these three headers: 'First Name', 'Last Name', and 'Company Domain/Name'." });
+      // Enforce that all required headers are present
+      const missingHeaders = expectedHeaders.filter(eh => !normalizedHeaders.includes(eh));
+      if (missingHeaders.length > 0) {
+        setErrors({ file: `The CSV file is missing required headers: ${missingHeaders.join(', ')}. Required: First Name, Last Name, Company Name, Location, Title.` });
         return;
       }
       
@@ -289,11 +294,14 @@ export default function AddProspectModal({ list, isOpen, onClose, onSuccess }) {
         
         const rowObj = {};
         normalizedHeaders.forEach((header, index) => {
-          rowObj[header] = rowData[index] || "";
+          // Only map required headers (ignore extras, especially when >10 columns)
+          if (expectedHeaders.includes(header)) {
+            rowObj[header] = rowData[index] || "";
+          }
         });
         
         // Skip if completely blank row
-        if (!rowObj["First Name"].trim() && !rowObj["Last Name"].trim() && !rowObj["Company Domain/Name"].trim()) {
+        if (!rowObj["First Name"].trim() && !rowObj["Last Name"].trim() && !rowObj["Company Name"].trim()) {
           continue;
         }
         
@@ -349,7 +357,7 @@ export default function AddProspectModal({ list, isOpen, onClose, onSuccess }) {
               accumulatedResults.failedRecords.push({
                 first_name: row["First Name"] || "[Blank]",
                 last_name: row["Last Name"] || "[Blank]",
-                company: row["Company Domain/Name"] || "[Blank]",
+                company: row["Company Name"] || "[Blank]",
                 reason: failReason
               });
             });
@@ -446,16 +454,40 @@ export default function AddProspectModal({ list, isOpen, onClose, onSuccess }) {
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label" htmlFor="company-domain">Company Domain or Name</label>
+                  <label className="form-label" htmlFor="company-name">Company Name</label>
                   <input
-                    id="company-domain"
+                    id="company-name"
                     type="text"
                     className="form-input"
-                    placeholder="e.g. stripe.com or Stripe"
-                    value={domain}
-                    onChange={(e) => setDomain(e.target.value)}
+                    placeholder="e.g. Stripe"
+                    value={companyName}
+                    onChange={(e) => setCompanyName(e.target.value)}
                   />
-                  {errors.domain && <span className="form-error-msg">{errors.domain}</span>}
+                  {errors.companyName && <span className="form-error-msg">{errors.companyName}</span>}
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label" htmlFor="prospect-location">Location</label>
+                  <input
+                    id="prospect-location"
+                    type="text"
+                    className="form-input"
+                    placeholder="e.g. San Francisco, CA"
+                    value={location}
+                    onChange={(e) => setLocation(e.target.value)}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label" htmlFor="prospect-title">Title</label>
+                  <input
+                    id="prospect-title"
+                    type="text"
+                    className="form-input"
+                    placeholder="e.g. VP of Engineering"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                  />
                 </div>
 
                 <div className="modal-footer">
@@ -515,11 +547,13 @@ export default function AddProspectModal({ list, isOpen, onClose, onSuccess }) {
                 {errors.file && <span className="form-error-msg" style={{ display: 'block', marginTop: '8px', textAlign: 'center' }}>{errors.file}</span>}
 
                 <div className="upload-note">
-                  <strong>Note:</strong> The CSV file must contain only these three headers:
+                  <strong>Note:</strong> The CSV file must contain these five headers:
                   <ul>
                     <li>First Name</li>
                     <li>Last Name</li>
-                    <li>Company Domain/Name</li>
+                    <li>Company Name</li>
+                    <li>Location</li>
+                    <li>Title</li>
                   </ul>
                 </div>
 

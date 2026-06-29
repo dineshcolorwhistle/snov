@@ -106,9 +106,11 @@ class ProspectRequest(BaseModel):
     list_id: str = Field(..., description="ID of the platform list to add to")
     first_name: str = Field(..., description="First name of the prospect")
     last_name: str = Field(..., description="Last name of the prospect")
-    domain: str = Field(..., description="Company domain or name of the prospect")
+    company_name: str = Field(..., description="Company name of the prospect")
+    location: Optional[str] = Field(None, description="Location of the prospect")
+    title: Optional[str] = Field(None, description="Title of the prospect")
 
-    @field_validator("first_name", "last_name", "domain", "list_id")
+    @field_validator("first_name", "last_name", "company_name", "list_id")
     @classmethod
     def check_non_empty(cls, v: str, info) -> str:
         stripped = v.strip()
@@ -299,7 +301,9 @@ async def add_prospect(
     """
     client = get_provider_client(platform, current_user)
     uid = current_user["id"]
-    input_val = request.domain.strip()
+    input_val = request.company_name.strip()
+    prospect_location = (request.location or "").strip() or None
+    prospect_title = (request.title or "").strip() or None
 
     # 1. Resolve Company Name & Domain
     if shared_utils.is_valid_domain(input_val):
@@ -311,7 +315,7 @@ async def add_prospect(
         resolved_domain = shared_utils.find_domain_via_custom_api(company_name)
         if not resolved_domain:
             logger.info(f"Could not resolve domain for '{company_name}'. Logging to DB.")
-            db.log_domain_not_found(uid, request.first_name, request.last_name, company_name, None, platform)
+            db.log_domain_not_found(uid, request.first_name, request.last_name, company_name, None, platform, location=prospect_location, title=prospect_title)
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Could not resolve company domain for '{company_name}'. Logged to database."
@@ -325,7 +329,7 @@ async def add_prospect(
     )
     if not linkedin_url:
         logger.info("LinkedIn URL not found. Logging to DB.")
-        db.log_linkedin_not_found(uid, request.first_name, request.last_name, company_name, platform)
+        db.log_linkedin_not_found(uid, request.first_name, request.last_name, company_name, platform, location=prospect_location, title=prospect_title)
 
     # 3. Find Business Email
     resolved_email = None
@@ -337,7 +341,7 @@ async def add_prospect(
         )
     except Exception as e:
         logger.error(f"Email Finder failed: {e}")
-        db.log_email_not_found(uid, request.first_name, request.last_name, company_name, resolved_domain, linkedin_url, platform)
+        db.log_email_not_found(uid, request.first_name, request.last_name, company_name, resolved_domain, linkedin_url, platform, location=prospect_location, title=prospect_title)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Email Finder API failed: {str(e)}. Logged to database."
@@ -345,7 +349,7 @@ async def add_prospect(
 
     if not resolved_email:
         logger.info("No email address resolved. Logging to DB.")
-        db.log_email_not_found(uid, request.first_name, request.last_name, company_name, resolved_domain, linkedin_url, platform)
+        db.log_email_not_found(uid, request.first_name, request.last_name, company_name, resolved_domain, linkedin_url, platform, location=prospect_location, title=prospect_title)
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="No business email address found. Logged to database."
@@ -358,7 +362,8 @@ async def add_prospect(
         logger.info(f"Email found but failed verification: {resolved_email} (status: {status_str}). Logging to DB.")
         db.log_email_unverified(
             uid, request.first_name, request.last_name, company_name, 
-            resolved_domain, resolved_email, linkedin_url, status_str, platform
+            resolved_domain, resolved_email, linkedin_url, status_str, platform,
+            location=prospect_location, title=prospect_title
         )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -374,7 +379,9 @@ async def add_prospect(
             last_name=request.last_name,
             company_name=company_name,
             company_domain=resolved_domain,
-            linkedin_url=linkedin_url
+            linkedin_url=linkedin_url,
+            location=prospect_location,
+            title=prospect_title
         )
         if not success:
             raise Exception("Platform list addition returned False.")
@@ -432,16 +439,26 @@ async def bulk_add_prospects(
                 "company domain",
                 "domain"
             ]:
-                normalized_headers.append("Company Domain/Name")
+                normalized_headers.append("Company Name")
+            elif h_clean == "location":
+                normalized_headers.append("Location")
+            elif h_clean == "title":
+                normalized_headers.append("Title")
             else:
                 normalized_headers.append(h.strip())
                 
-        expected_headers = ["First Name", "Last Name", "Company Domain/Name"]
-        if set(normalized_headers) != set(expected_headers) or len(normalized_headers) != 3:
+        expected_headers = {"First Name", "Last Name", "Company Name", "Location", "Title"}
+        present_headers = set(normalized_headers)
+        missing = expected_headers - present_headers
+        if missing:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="The CSV file must contain only these three headers: 'First Name', 'Last Name', and 'Company Domain/Name'."
+                detail=f"The CSV file is missing required headers: {', '.join(sorted(missing))}. Required: First Name, Last Name, Company Name, Location, Title."
             )
+        
+        # If more than 10 columns, filter to only required headers
+        if len(normalized_headers) > 10:
+            normalized_headers = [h if h in expected_headers else None for h in normalized_headers]
             
         reader.fieldnames = normalized_headers
         rows = list(reader)
@@ -465,11 +482,13 @@ async def bulk_add_prospects(
     def process_row(row):
         first_name = row.get("First Name", "").strip()
         last_name = row.get("Last Name", "").strip()
-        domain_or_name = row.get("Company Domain/Name", "").strip()
+        domain_or_name = row.get("Company Name", "").strip()
+        row_location = (row.get("Location") or "").strip() or None
+        row_title = (row.get("Title") or "").strip() or None
         
         if not first_name or not last_name or not domain_or_name:
             reason = "Missing required fields"
-            db.log_domain_not_found(uid, first_name, last_name, domain_or_name or "[Blank]", None, platform)
+            db.log_domain_not_found(uid, first_name, last_name, domain_or_name or "[Blank]", None, platform, location=row_location, title=row_title)
             return {
                 "success": False,
                 "first_name": first_name or "[Blank]",
@@ -488,7 +507,7 @@ async def bulk_add_prospects(
             target_domain = shared_utils.find_domain_via_custom_api(company_name)
             if not target_domain:
                 reason = "Could not resolve company domain"
-                db.log_domain_not_found(uid, first_name, last_name, company_name, None, platform)
+                db.log_domain_not_found(uid, first_name, last_name, company_name, None, platform, location=row_location, title=row_title)
                 return {
                     "success": False,
                     "first_name": first_name,
@@ -504,7 +523,7 @@ async def bulk_add_prospects(
             company_name=company_name
         )
         if not linkedin_url:
-            db.log_linkedin_not_found(uid, first_name, last_name, company_name, platform)
+            db.log_linkedin_not_found(uid, first_name, last_name, company_name, platform, location=row_location, title=row_title)
 
         # 3. Find Business Email
         email = None
@@ -512,7 +531,7 @@ async def bulk_add_prospects(
             email = client.find_email_by_name_and_domain(first_name, last_name, target_domain)
         except Exception as e:
             reason = f"Email Finder failed: {str(e)}"
-            db.log_email_not_found(uid, first_name, last_name, company_name, target_domain, linkedin_url, platform)
+            db.log_email_not_found(uid, first_name, last_name, company_name, target_domain, linkedin_url, platform, location=row_location, title=row_title)
             return {
                 "success": False,
                 "first_name": first_name,
@@ -523,7 +542,7 @@ async def bulk_add_prospects(
             
         if not email:
             reason = "No business email address found"
-            db.log_email_not_found(uid, first_name, last_name, company_name, target_domain, linkedin_url, platform)
+            db.log_email_not_found(uid, first_name, last_name, company_name, target_domain, linkedin_url, platform, location=row_location, title=row_title)
             return {
                 "success": False,
                 "first_name": first_name,
@@ -539,7 +558,8 @@ async def bulk_add_prospects(
             reason = f"Email unverified (status: {status_str})"
             db.log_email_unverified(
                 uid, first_name, last_name, company_name,
-                target_domain, email, linkedin_url, status_str, platform
+                target_domain, email, linkedin_url, status_str, platform,
+                location=row_location, title=row_title
             )
             return {
                 "success": False,
@@ -558,13 +578,15 @@ async def bulk_add_prospects(
                 last_name=last_name,
                 company_name=company_name,
                 company_domain=target_domain,
-                linkedin_url=linkedin_url
+                linkedin_url=linkedin_url,
+                location=row_location,
+                title=row_title
             )
             if added:
                 return {"success": True}
             else:
                 reason = "Failed to add lead to platform list"
-                db.log_email_unverified(uid, first_name, last_name, company_name, target_domain, email, linkedin_url, "list_addition_failed", platform)
+                db.log_email_unverified(uid, first_name, last_name, company_name, target_domain, email, linkedin_url, "list_addition_failed", platform, location=row_location, title=row_title)
                 return {
                     "success": False,
                     "first_name": first_name,
@@ -574,7 +596,7 @@ async def bulk_add_prospects(
                 }
         except Exception as e:
             reason = f"API error adding lead: {str(e)}"
-            db.log_email_unverified(uid, first_name, last_name, company_name, target_domain, email, linkedin_url, "api_error_on_addition", platform)
+            db.log_email_unverified(uid, first_name, last_name, company_name, target_domain, email, linkedin_url, "api_error_on_addition", platform, location=row_location, title=row_title)
             return {
                 "success": False,
                 "first_name": first_name,
@@ -600,7 +622,7 @@ async def bulk_add_prospects(
                     "success": False,
                     "first_name": row.get("First Name", ""),
                     "last_name": row.get("Last Name", ""),
-                    "company": row.get("Company Domain/Name", ""),
+                    "company": row.get("Company Name", ""),
                     "reason": f"System error during processing: {str(e)}"
                 })
 

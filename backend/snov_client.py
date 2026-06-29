@@ -263,7 +263,9 @@ class SnovioClient(BaseProvider):
         last_name: str,
         company_name: Optional[str] = None,
         company_domain: Optional[str] = None,
-        linkedin_url: Optional[str] = None
+        linkedin_url: Optional[str] = None,
+        location: Optional[str] = None,
+        title: Optional[str] = None
     ) -> bool:
         """
         Adds a prospect to a Snov.io list.
@@ -293,6 +295,10 @@ class SnovioClient(BaseProvider):
                 else:
                     formatted_linkedin += "/&social"
             payload["socialLinks[linkedIn]"] = formatted_linkedin
+        if location:
+            payload["locality"] = location
+        if title:
+            payload["position"] = title
             
         logger.info(f"Adding prospect {first_name} {last_name} ({email}) to list {list_id}...")
         

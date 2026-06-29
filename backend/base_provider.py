@@ -51,7 +51,9 @@ class BaseProvider(ABC):
         last_name: str,
         company_name: Optional[str] = None,
         company_domain: Optional[str] = None,
-        linkedin_url: Optional[str] = None
+        linkedin_url: Optional[str] = None,
+        location: Optional[str] = None,
+        title: Optional[str] = None
     ) -> bool:
         """
         Adds a verified prospect to the specified platform list.

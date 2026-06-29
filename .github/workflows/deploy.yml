@@ -22,6 +22,8 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           port: ${{ secrets.SSH_PORT }}
           key: ${{ secrets.SSH_KEY }}
+          timeout: 120s
+          command_timeout: 30m
           script: |
             cd /home/agentwhistle-snov-automation/htdocs/snov-automation.agentwhistle.com/snov
             echo "========================================="
