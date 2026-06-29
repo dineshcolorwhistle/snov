@@ -403,6 +403,7 @@ async def bulk_add_prospects(
     list_id: str = Form(...),
     file: UploadFile = File(...),
     platform: str = Form("snov"),
+    verify_emails: bool = Form(True),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -552,22 +553,23 @@ async def bulk_add_prospects(
             }
             
         # 4. Verify Business Email
-        verification = client.verify_email(email)
-        if not verification.get("verified"):
-            status_str = verification.get("status", "unverified")
-            reason = f"Email unverified (status: {status_str})"
-            db.log_email_unverified(
-                uid, first_name, last_name, company_name,
-                target_domain, email, linkedin_url, status_str, platform,
-                location=row_location, title=row_title
-            )
-            return {
-                "success": False,
-                "first_name": first_name,
-                "last_name": last_name,
-                "company": domain_or_name,
-                "reason": reason
-            }
+        if verify_emails:
+            verification = client.verify_email(email)
+            if not verification.get("verified"):
+                status_str = verification.get("status", "unverified")
+                reason = f"Email unverified (status: {status_str})"
+                db.log_email_unverified(
+                    uid, first_name, last_name, company_name,
+                    target_domain, email, linkedin_url, status_str, platform,
+                    location=row_location, title=row_title
+                )
+                return {
+                    "success": False,
+                    "first_name": first_name,
+                    "last_name": last_name,
+                    "company": domain_or_name,
+                    "reason": reason
+                }
 
         # 5. Add to List
         try:

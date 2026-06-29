@@ -62,6 +62,7 @@ export default function AddProspectModal({ list, isOpen, onClose, onSuccess }) {
   const [file, setFile] = useState(null);
   const [dragActive, setDragActive] = useState(false);
   const [bulkResults, setBulkResults] = useState(null);
+  const [verifyEmails, setVerifyEmails] = useState(true);
 
   // Batching & progress tracking states
   const [progress, setProgress] = useState(0);
@@ -91,6 +92,7 @@ export default function AddProspectModal({ list, isOpen, onClose, onSuccess }) {
       setFile(null);
       setDragActive(false);
       setBulkResults(null);
+      setVerifyEmails(true);
       setProgress(0);
       setTotalProspects(0);
       setProcessedProspects(0);
@@ -343,6 +345,7 @@ export default function AddProspectModal({ list, isOpen, onClose, onSuccess }) {
           const formData = new FormData();
           formData.append('list_id', list.id);
           formData.append('file', csvBlob, 'batch.csv');
+          formData.append('verify_emails', verifyEmails);
           
           const response = await apiFetch('/api/prospects/bulk', {
             method: 'POST',
@@ -545,6 +548,21 @@ export default function AddProspectModal({ list, isOpen, onClose, onSuccess }) {
                   )}
                 </div>
                 {errors.file && <span className="form-error-msg" style={{ display: 'block', marginTop: '8px', textAlign: 'center' }}>{errors.file}</span>}
+
+                <div className="toggle-container">
+                  <div style={{ flexGrow: 1, textAlign: 'left' }}>
+                    <span className="toggle-label" onClick={() => setVerifyEmails(!verifyEmails)}>Verify Emails</span>
+                    <div className="toggle-sublabel">Verify email addresses before adding them to the list (recommended)</div>
+                  </div>
+                  <label className="toggle-switch">
+                    <input 
+                      type="checkbox" 
+                      checked={verifyEmails} 
+                      onChange={(e) => setVerifyEmails(e.target.checked)}
+                    />
+                    <span className="toggle-slider"></span>
+                  </label>
+                </div>
 
                 <div className="upload-note">
                   <strong>Note:</strong> The CSV file must contain these five headers:
