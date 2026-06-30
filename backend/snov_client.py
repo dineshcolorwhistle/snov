@@ -164,6 +164,10 @@ class SnovioClient(BaseProvider):
             time.sleep(poll_interval)
             try:
                 res = requests.get(result_url, params={"task_hash": task_hash}, headers=headers, timeout=10)
+                if res.status_code == 429:
+                    logger.warning("Snov.io rate limit (429) hit during email finder polling. Waiting 5 seconds...")
+                    time.sleep(5.0)
+                    continue
                 res.raise_for_status()
                 result_data = res.json()
             except Exception as e:
@@ -216,44 +220,89 @@ class SnovioClient(BaseProvider):
         """
         Verifies the email address using Snov.io's verification APIs.
         """
-        url_status = f"{self.base_url}/v1/get-emails-verification-status"
         token = self.get_valid_token()
         headers = {
             "Authorization": f"Bearer {token}",
-            "Content-Type": "application/x-www-form-urlencoded"
+            "Content-Type": "application/json"
         }
+        url_start = f"{self.base_url}/v2/email-verification/start"
         payload = {
-            "access_token": token,
-            "emails[]": email
+            "emails": [email]
         }
-        try:
-            response = requests.post(url_status, data=payload, headers=headers, timeout=10)
-            response.raise_for_status()
-            data = response.json()
-            if isinstance(data, list) and len(data) > 0:
-                status = data[0].get("status")
-                logger.info(f"Snov.io email verification status for {email}: {status}")
-                if status == "valid":
-                    return {"verified": True, "status": status}
-                elif status in ["not_valid", "invalid"]:
-                    return {"verified": False, "status": "invalid"}
-                elif status == "not_verified":
-                    # Start verification
-                    url_start = f"{self.base_url}/v2/email-verification/start"
-                    start_payload = {
-                        "emails": [email]
-                    }
-                    start_headers = {
-                        "Authorization": f"Bearer {token}",
-                        "Content-Type": "application/json"
-                    }
-                    requests.post(url_start, json=start_payload, headers=start_headers, timeout=10)
-                    return {"verified": False, "status": "pending_verification"}
-                return {"verified": False, "status": status or "unknown"}
-        except Exception as e:
-            logger.error(f"Snov.io email verification check failed: {e}")
         
-        return {"verified": False, "status": "verification_error"}
+        try:
+            logger.info(f"Starting Snov.io email verification for {email}...")
+            response = requests.post(url_start, json=payload, headers=headers, timeout=10)
+            response.raise_for_status()
+            start_data = response.json()
+        except Exception as e:
+            logger.error(f"Snov.io email verification start failed: {e}")
+            return {"verified": False, "status": "verification_error"}
+
+        task_hash = start_data.get("task_hash")
+        if not task_hash and isinstance(start_data.get("data"), dict):
+            task_hash = start_data["data"].get("task_hash")
+
+        if not task_hash:
+            logger.warning(f"No task_hash returned in Snov.io verification response: {start_data}")
+            return {"verified": False, "status": "no_task_hash"}
+
+        result_url = f"{self.base_url}/v2/email-verification/result"
+        max_attempts = 40
+        poll_interval = 2.5
+        
+        logger.info(f"Verification task started. Hash: {task_hash}. Polling for results...")
+        
+        for attempt in range(max_attempts):
+            time.sleep(poll_interval)
+            try:
+                res = requests.get(result_url, params={"task_hash": task_hash}, headers=headers, timeout=10)
+                if res.status_code == 429:
+                    logger.warning("Snov.io rate limit (429) hit during verification polling. Waiting 5 seconds...")
+                    time.sleep(5.0)
+                    continue
+                res.raise_for_status()
+                result_data = res.json()
+            except Exception as e:
+                logger.error(f"Error polling verification results (attempt {attempt+1}): {e}")
+                continue
+
+            logger.info(f"Verification poll attempt {attempt+1} response: {result_data}")
+
+            status = "completed"
+            rows = []
+            if isinstance(result_data, dict):
+                status = result_data.get("status") or "completed"
+                if status in ["processing", "pending"]:
+                    logger.info("Verification task is still processing. Waiting...")
+                    continue
+                
+                rows = result_data.get("data") or result_data.get("results") or result_data.get("rows") or []
+            elif isinstance(result_data, list):
+                rows = result_data
+
+            if rows:
+                for row in rows:
+                    if isinstance(row, dict) and row.get("email") == email:
+                        res_obj = row.get("result") or {}
+                        if isinstance(res_obj, dict):
+                            email_status = res_obj.get("smtp_status")
+                        else:
+                            email_status = res_obj
+
+                        logger.info(f"Snov.io email verification status for {email}: {email_status}")
+                        if email_status == "valid":
+                            return {"verified": True, "status": email_status}
+                        elif email_status in ["not_valid", "invalid"]:
+                            return {"verified": False, "status": "invalid"}
+                        else:
+                            return {"verified": False, "status": email_status or "unknown"}
+
+            if status == "completed":
+                logger.info("Verification task completed but no matching email result was found.")
+                break
+
+        return {"verified": False, "status": "timeout"}
 
     def add_prospect_to_list(
         self, 
