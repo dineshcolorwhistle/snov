@@ -155,7 +155,7 @@ class SnovioClient(BaseProvider):
             raise Exception("Snov.io did not return a task hash for the email search.")
 
         result_url = f"{self.base_url}/v2/emails-by-domain-by-name/result"
-        max_attempts = 12
+        max_attempts = 8
         poll_interval = 4.0
         
         logger.info(f"Task started. Hash: {task_hash}. Polling for results...")
@@ -248,7 +248,7 @@ class SnovioClient(BaseProvider):
             return {"verified": False, "status": "no_task_hash"}
 
         result_url = f"{self.base_url}/v2/email-verification/result"
-        max_attempts = 40
+        max_attempts = 15
         poll_interval = 2.5
         
         logger.info(f"Verification task started. Hash: {task_hash}. Polling for results...")

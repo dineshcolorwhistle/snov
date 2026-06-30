@@ -356,27 +356,46 @@ export default function AddProspectModal({ list, isOpen, onClose, onSuccess, lis
           formData.append('file', csvBlob, 'batch.csv');
           formData.append('verify_emails', verifyEmails);
           
-          const response = await apiFetch('/api/prospects/bulk', {
-            method: 'POST',
-            body: formData,
-          });
-          const data = await response.json();
-          
-          if (!response.ok) {
-            const failReason = data.detail || 'Connection error processing batch.';
+          try {
+            const response = await apiFetch('/api/prospects/bulk', {
+              method: 'POST',
+              body: formData,
+            });
+            
+            let data;
+            try {
+              data = await response.json();
+            } catch (jsonErr) {
+              data = { detail: `Server returned status ${response.status} (invalid JSON response)` };
+            }
+            
+            if (!response.ok) {
+              const failReason = data.detail || 'Connection error processing batch.';
+              batch.forEach(row => {
+                accumulatedResults.failedCount++;
+                accumulatedResults.failedRecords.push({
+                  first_name: row["First Name"] || "[Blank]",
+                  last_name: row["Last Name"] || "[Blank]",
+                  company: row["Company Name"] || "[Blank]",
+                  reason: failReason
+                });
+              });
+            } else {
+              accumulatedResults.successCount += data.successCount;
+              accumulatedResults.failedCount += data.failedCount;
+              accumulatedResults.failedRecords.push(...data.failedRecords);
+            }
+          } catch (batchErr) {
+            console.error(`Error processing batch ${batchIndex + 1}:`, batchErr);
             batch.forEach(row => {
               accumulatedResults.failedCount++;
               accumulatedResults.failedRecords.push({
                 first_name: row["First Name"] || "[Blank]",
                 last_name: row["Last Name"] || "[Blank]",
                 company: row["Company Name"] || "[Blank]",
-                reason: failReason
+                reason: 'Request timed out or network error.'
               });
             });
-          } else {
-            accumulatedResults.successCount += data.successCount;
-            accumulatedResults.failedCount += data.failedCount;
-            accumulatedResults.failedRecords.push(...data.failedRecords);
           }
           
           currentProcessed += batch.length;
@@ -391,7 +410,7 @@ export default function AddProspectModal({ list, isOpen, onClose, onSuccess, lis
       } catch (err) {
         console.error(err);
         setStatusTitle('Import Failed');
-        setStatusMessage('Could not connect to the backend server. Make sure the backend server is running on port 8000.');
+        setStatusMessage(err.message || 'An unexpected error occurred during import.');
         setStatus('error');
       }
     };
