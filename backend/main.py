@@ -109,6 +109,8 @@ class ProspectRequest(BaseModel):
     company_name: str = Field(..., description="Company name of the prospect")
     location: Optional[str] = Field(None, description="Location of the prospect")
     title: Optional[str] = Field(None, description="Title of the prospect")
+    verify_emails: bool = Field(False, description="Whether to verify email addresses")
+    unverified_list_id: Optional[str] = Field(None, description="ID of the platform list for unverified emails")
 
     @field_validator("first_name", "last_name", "company_name", "list_id")
     @classmethod
@@ -356,19 +358,47 @@ async def add_prospect(
         )
 
     # 4. Verify Business Email
-    verification = client.verify_email(resolved_email)
-    if not verification.get("verified"):
-        status_str = verification.get("status", "unverified")
-        logger.info(f"Email found but failed verification: {resolved_email} (status: {status_str}). Logging to DB.")
-        db.log_email_unverified(
-            uid, request.first_name, request.last_name, company_name, 
-            resolved_domain, resolved_email, linkedin_url, status_str, platform,
-            location=prospect_location, title=prospect_title
-        )
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Email was found ({resolved_email}) but is unverified (status: '{status_str}'). Logged to database."
-        )
+    if request.verify_emails:
+        if not request.unverified_list_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="An unverified list must be specified when email verification is enabled."
+            )
+        verification = client.verify_email(resolved_email)
+        if not verification.get("verified"):
+            status_str = verification.get("status", "unverified")
+            logger.info(f"Email found but failed verification: {resolved_email} (status: {status_str}). Logging to DB.")
+            db.log_email_unverified(
+                uid, request.first_name, request.last_name, company_name, 
+                resolved_domain, resolved_email, linkedin_url, status_str, platform,
+                location=prospect_location, title=prospect_title
+            )
+            # Add to unverified list
+            try:
+                success = client.add_prospect_to_list(
+                    list_id=request.unverified_list_id,
+                    email=resolved_email,
+                    first_name=request.first_name,
+                    last_name=request.last_name,
+                    company_name=company_name,
+                    company_domain=resolved_domain,
+                    linkedin_url=linkedin_url,
+                    location=prospect_location,
+                    title=prospect_title
+                )
+                if not success:
+                    raise Exception("Platform unverified list addition returned False.")
+                return {
+                    "success": True,
+                    "email": resolved_email,
+                    "message": f"Successfully resolved ({resolved_email}) and added unverified lead to list!"
+                }
+            except Exception as e:
+                logger.error(f"Failed to add unverified lead to list: {e}")
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail=f"Failed to add unverified lead to list: {str(e)}"
+                )
 
     # 5. Add Prospect/Lead to the selected list
     try:
@@ -389,7 +419,7 @@ async def add_prospect(
         return {
             "success": True,
             "email": resolved_email,
-            "message": f"Successfully resolved, verified ({resolved_email}), and added lead to list!"
+            "message": f"Successfully resolved ({resolved_email}) and added lead to list!"
         }
     except Exception as e:
         logger.error(f"Failed to add lead to list: {e}")
@@ -404,7 +434,7 @@ async def bulk_add_prospects(
     unverified_list_id: str = Form(None),
     file: UploadFile = File(...),
     platform: str = Form("snov"),
-    verify_emails: bool = Form(True),
+    verify_emails: bool = Form(False),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -632,7 +662,7 @@ async def bulk_add_prospects(
             }
 
     # Run processing concurrently
-    max_workers = min(5, len(rows))
+    max_workers = min(15, len(rows))
     results = []
     
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:

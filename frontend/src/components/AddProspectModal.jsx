@@ -62,7 +62,7 @@ export default function AddProspectModal({ list, isOpen, onClose, onSuccess, lis
   const [file, setFile] = useState(null);
   const [dragActive, setDragActive] = useState(false);
   const [bulkResults, setBulkResults] = useState(null);
-  const [verifyEmails, setVerifyEmails] = useState(true);
+  const [verifyEmails, setVerifyEmails] = useState(false);
   const [unverifiedListId, setUnverifiedListId] = useState('');
 
   // Batching & progress tracking states
@@ -93,7 +93,7 @@ export default function AddProspectModal({ list, isOpen, onClose, onSuccess, lis
       setFile(null);
       setDragActive(false);
       setBulkResults(null);
-      setVerifyEmails(true);
+      setVerifyEmails(false);
       setUnverifiedListId('');
       setProgress(0);
       setTotalProspects(0);
@@ -327,8 +327,8 @@ export default function AddProspectModal({ list, isOpen, onClose, onSuccess, lis
       setProcessedProspects(0);
       setProgress(0);
       
-      // Chunk size of 5
-      const chunkSize = 5;
+      // Chunk size of 15
+      const chunkSize = 15;
       const chunks = [];
       for (let i = 0; i < rows.length; i += chunkSize) {
         chunks.push(rows.slice(i, i + chunkSize));
@@ -577,7 +577,7 @@ export default function AddProspectModal({ list, isOpen, onClose, onSuccess, lis
                 </div>
                 {errors.file && <span className="form-error-msg" style={{ display: 'block', marginTop: '8px', textAlign: 'center' }}>{errors.file}</span>}
 
-                <div className="toggle-container">
+                <div className="toggle-container" style={{ display: 'none' }}>
                   <div style={{ flexGrow: 1, textAlign: 'left' }}>
                     <span className="toggle-label" onClick={() => setVerifyEmails(!verifyEmails)}>Verify Emails</span>
                     <div className="toggle-sublabel">Verify email addresses before adding them to the list (recommended)</div>
